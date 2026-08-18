@@ -20,6 +20,7 @@ import {
   getSessionAttempts,
   getSessionClimbs,
   moveGrade,
+  reorderGrades,
   reopenSession,
   restoreAllData,
   updateAttempt,
@@ -56,6 +57,9 @@ describe("repository", () => {
 
     await moveGrade(gradeB.id, "up");
     expect((await getGymGrades(gym.id)).map((grade) => grade.label)).toEqual(["1Q", "2Q"]);
+
+    await reorderGrades(gym.id, [gradeA.id, gradeB.id]);
+    expect((await getGymGrades(gym.id)).map((grade) => grade.label)).toEqual(["2Q", "1Q"]);
 
     await archiveGrade(gradeA.id);
     expect((await getGymGrades(gym.id)).map((grade) => grade.id)).toEqual([gradeB.id]);

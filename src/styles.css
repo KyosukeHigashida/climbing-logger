@@ -386,23 +386,49 @@ h2 {
   margin-top: 16px;
 }
 
-.grade-list {
+.grade-table {
   display: grid;
-  gap: 10px;
+  overflow: hidden;
   margin-top: 12px;
+  border: 1px solid rgba(212, 221, 209, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
 }
 
 .grade-row {
   display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  align-items: center;
   gap: 8px;
-  padding: 10px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.055);
+  min-width: 0;
+  padding: 8px;
+  border-bottom: 1px solid rgba(212, 221, 209, 0.08);
+}
+
+.grade-row:last-child {
+  border-bottom: 0;
+}
+
+.grade-row.dragging {
+  background: rgba(215, 244, 95, 0.13);
+}
+
+.drag-handle {
+  width: 34px;
+  min-height: 42px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.08);
+  color: #aab5ab;
+  cursor: grab;
+  font-size: 1rem;
+  font-weight: 900;
+  touch-action: none;
 }
 
 .grade-actions {
   display: grid;
-  grid-template-columns: 42px 42px repeat(3, minmax(0, 1fr));
+  grid-column: 2;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   min-width: 0;
 }
@@ -416,15 +442,16 @@ h2 {
   font-weight: 850;
 }
 
-@media (max-width: 380px) {
-  .grade-actions {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
 .grade-actions .danger {
   background: rgba(255, 107, 95, 0.82);
   color: #1b0d0b;
+}
+
+.grade-status {
+  grid-column: 2;
+  color: #aab5ab;
+  font-size: 0.78rem;
+  font-weight: 800;
 }
 
 .gym-danger-zone {

@@ -1,5 +1,5 @@
 import { useLiveQuery } from "dexie-react-hooks";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, type PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   archiveGrade,
@@ -12,7 +12,7 @@ import {
   getAllGyms,
   getAllSessions,
   getGymGrades,
-  moveGrade,
+  reorderGrades,
   updateGrade,
   updateGym,
 } from "../db/repository";
@@ -104,11 +104,26 @@ function GymEditor({ gym, grades, sessionUseCount, climbUseCount, onDeleted }: G
   const [name, setName] = useState(gym.name);
   const [newGradeLabel, setNewGradeLabel] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [orderedGradeIds, setOrderedGradeIds] = useState<string[]>(() => grades.map((grade) => grade.id));
+  const [draggedGradeId, setDraggedGradeId] = useState<string | null>(null);
+  const orderedGradeIdsRef = useRef(orderedGradeIds);
+  const orderedGrades = orderedGradeIds
+    .map((gradeId) => grades.find((grade) => grade.id === gradeId))
+    .filter((grade): grade is Grade => Boolean(grade));
 
   useEffect(() => {
     setName(gym.name);
     setMessage(null);
   }, [gym.id, gym.name]);
+
+  useEffect(() => {
+    if (draggedGradeId) {
+      return;
+    }
+    const nextOrder = grades.map((grade) => grade.id);
+    orderedGradeIdsRef.current = nextOrder;
+    setOrderedGradeIds(nextOrder);
+  }, [draggedGradeId, grades]);
 
   async function handleSaveGym(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -147,6 +162,51 @@ function GymEditor({ gym, grades, sessionUseCount, climbUseCount, onDeleted }: G
     }
   }
 
+  function handleGradePointerDown(event: PointerEvent<HTMLButtonElement>, gradeId: string) {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDraggedGradeId(gradeId);
+  }
+
+  function handleGradePointerMove(event: PointerEvent<HTMLButtonElement>) {
+    if (!draggedGradeId) {
+      return;
+    }
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-grade-id]");
+    const targetGradeId = target?.dataset.gradeId;
+    if (!targetGradeId || targetGradeId === draggedGradeId) {
+      return;
+    }
+
+    setOrderedGradeIds((current) => {
+      const from = current.indexOf(draggedGradeId);
+      const to = current.indexOf(targetGradeId);
+      if (from < 0 || to < 0 || from === to) {
+        return current;
+      }
+      const next = [...current];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      orderedGradeIdsRef.current = next;
+      return next;
+    });
+  }
+
+  async function handleGradePointerUp() {
+    if (!draggedGradeId) {
+      return;
+    }
+    setDraggedGradeId(null);
+    try {
+      await reorderGrades(gym.id, orderedGradeIdsRef.current);
+      setMessage(null);
+    } catch (err) {
+      const nextOrder = grades.map((grade) => grade.id);
+      orderedGradeIdsRef.current = nextOrder;
+      setOrderedGradeIds(nextOrder);
+      setMessage(err instanceof Error ? err.message : "Could not reorder grades.");
+    }
+  }
+
   return (
     <section className="section gym-editor">
       <form className="climb-form compact-form" onSubmit={handleSaveGym}>
@@ -160,16 +220,18 @@ function GymEditor({ gym, grades, sessionUseCount, climbUseCount, onDeleted }: G
       <div className="section-heading grade-heading">
         <h2>Grades</h2>
       </div>
-      <div className="grade-list">
+      <div className="grade-table" role="list" aria-label="Grades">
         {grades.length === 0 ? (
           <p className="empty">Grades will appear here.</p>
         ) : (
-          grades.map((grade, index) => (
+          orderedGrades.map((grade) => (
             <GradeRow
               key={grade.id}
               grade={grade}
-              isFirst={index === 0}
-              isLast={index === grades.length - 1}
+              isDragging={grade.id === draggedGradeId}
+              onDragStart={handleGradePointerDown}
+              onDragMove={handleGradePointerMove}
+              onDragEnd={handleGradePointerUp}
               onMessage={setMessage}
             />
           ))
@@ -203,12 +265,14 @@ function GymEditor({ gym, grades, sessionUseCount, climbUseCount, onDeleted }: G
 
 type GradeRowProps = {
   grade: Grade;
-  isFirst: boolean;
-  isLast: boolean;
+  isDragging: boolean;
+  onDragStart: (event: PointerEvent<HTMLButtonElement>, gradeId: string) => void;
+  onDragMove: (event: PointerEvent<HTMLButtonElement>) => void;
+  onDragEnd: () => void;
   onMessage: (message: string | null) => void;
 };
 
-function GradeRow({ grade, isFirst, isLast, onMessage }: GradeRowProps) {
+function GradeRow({ grade, isDragging, onDragStart, onDragMove, onDragEnd, onMessage }: GradeRowProps) {
   const [label, setLabel] = useState(grade.label);
 
   useEffect(() => {
@@ -233,15 +297,25 @@ function GradeRow({ grade, isFirst, isLast, onMessage }: GradeRowProps) {
   }
 
   return (
-    <div className={`grade-row ${grade.isArchived ? "archived" : ""}`}>
+    <div
+      className={`grade-row ${grade.isArchived ? "archived" : ""} ${isDragging ? "dragging" : ""}`}
+      data-grade-id={grade.id}
+      role="listitem"
+    >
+      <button
+        type="button"
+        className="drag-handle"
+        aria-label={`Drag ${grade.label}`}
+        onPointerDown={(event) => onDragStart(event, grade.id)}
+        onPointerMove={onDragMove}
+        onPointerUp={onDragEnd}
+        onPointerCancel={onDragEnd}
+      >
+        ⋮⋮
+      </button>
       <input value={label} onChange={(event) => setLabel(event.target.value)} aria-label="Grade label" />
+      {grade.isArchived && <span className="grade-status">Archived</span>}
       <div className="grade-actions">
-        <button type="button" disabled={isFirst} onClick={() => moveGrade(grade.id, "up")} aria-label="Move grade up">
-          ↑
-        </button>
-        <button type="button" disabled={isLast} onClick={() => moveGrade(grade.id, "down")} aria-label="Move grade down">
-          ↓
-        </button>
         <button type="button" onClick={handleSave}>
           Save
         </button>

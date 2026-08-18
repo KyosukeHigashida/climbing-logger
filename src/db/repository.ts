@@ -173,10 +173,26 @@ export async function moveGrade(gradeId: string, direction: "up" | "down"): Prom
   const reordered = [...grades];
   const [moved] = reordered.splice(index, 1);
   reordered.splice(targetIndex, 0, moved);
+  await reorderGrades(
+    grade.gymId,
+    reordered.map((item) => item.id),
+  );
+}
+
+export async function reorderGrades(gymId: string, orderedGradeIds: string[]): Promise<void> {
+  const grades = await getGymGrades(gymId, true);
+  const existingIds = new Set(grades.map((grade) => grade.id));
+  if (orderedGradeIds.length !== grades.length || new Set(orderedGradeIds).size !== orderedGradeIds.length) {
+    throw new Error("Grade order is invalid.");
+  }
+  if (!orderedGradeIds.every((gradeId) => existingIds.has(gradeId))) {
+    throw new Error("Grade order contains a grade from another gym.");
+  }
+
   const timestamp = nowIso();
   await db.transaction("rw", db.grades, async () => {
     await Promise.all(
-      reordered.map((item, order) => db.grades.update(item.id, { order, updatedAt: timestamp })),
+      orderedGradeIds.map((gradeId, order) => db.grades.update(gradeId, { order, updatedAt: timestamp })),
     );
   });
 }
