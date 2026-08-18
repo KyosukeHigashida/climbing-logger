@@ -106,6 +106,7 @@ function GymEditor({ gym, grades, sessionUseCount, climbUseCount, onDeleted }: G
   const [message, setMessage] = useState<string | null>(null);
   const [orderedGradeIds, setOrderedGradeIds] = useState<string[]>(() => grades.map((grade) => grade.id));
   const [draggedGradeId, setDraggedGradeId] = useState<string | null>(null);
+  const [openGradeMenuId, setOpenGradeMenuId] = useState<string | null>(null);
   const orderedGradeIdsRef = useRef(orderedGradeIds);
   const orderedGrades = orderedGradeIds
     .map((gradeId) => grades.find((grade) => grade.id === gradeId))
@@ -120,6 +121,7 @@ function GymEditor({ gym, grades, sessionUseCount, climbUseCount, onDeleted }: G
     if (draggedGradeId) {
       return;
     }
+    setOpenGradeMenuId(null);
     const nextOrder = grades.map((grade) => grade.id);
     orderedGradeIdsRef.current = nextOrder;
     setOrderedGradeIds(nextOrder);
@@ -164,6 +166,7 @@ function GymEditor({ gym, grades, sessionUseCount, climbUseCount, onDeleted }: G
 
   function handleGradePointerDown(event: PointerEvent<HTMLButtonElement>, gradeId: string) {
     event.currentTarget.setPointerCapture(event.pointerId);
+    setOpenGradeMenuId(null);
     setDraggedGradeId(gradeId);
   }
 
@@ -229,9 +232,12 @@ function GymEditor({ gym, grades, sessionUseCount, climbUseCount, onDeleted }: G
               key={grade.id}
               grade={grade}
               isDragging={grade.id === draggedGradeId}
+              isMenuOpen={grade.id === openGradeMenuId}
               onDragStart={handleGradePointerDown}
               onDragMove={handleGradePointerMove}
               onDragEnd={handleGradePointerUp}
+              onToggleMenu={() => setOpenGradeMenuId((current) => (current === grade.id ? null : grade.id))}
+              onCloseMenu={() => setOpenGradeMenuId(null)}
               onMessage={setMessage}
             />
           ))
@@ -266,13 +272,26 @@ function GymEditor({ gym, grades, sessionUseCount, climbUseCount, onDeleted }: G
 type GradeRowProps = {
   grade: Grade;
   isDragging: boolean;
+  isMenuOpen: boolean;
   onDragStart: (event: PointerEvent<HTMLButtonElement>, gradeId: string) => void;
   onDragMove: (event: PointerEvent<HTMLButtonElement>) => void;
   onDragEnd: () => void;
+  onToggleMenu: () => void;
+  onCloseMenu: () => void;
   onMessage: (message: string | null) => void;
 };
 
-function GradeRow({ grade, isDragging, onDragStart, onDragMove, onDragEnd, onMessage }: GradeRowProps) {
+function GradeRow({
+  grade,
+  isDragging,
+  isMenuOpen,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
+  onToggleMenu,
+  onCloseMenu,
+  onMessage,
+}: GradeRowProps) {
   const [label, setLabel] = useState(grade.label);
 
   useEffect(() => {
@@ -283,14 +302,25 @@ function GradeRow({ grade, isDragging, onDragStart, onDragMove, onDragEnd, onMes
     try {
       await updateGrade(grade.id, label);
       onMessage("Grade saved.");
+      onCloseMenu();
     } catch (err) {
       onMessage(err instanceof Error ? err.message : "Could not save grade.");
+    }
+  }
+
+  async function handleArchive() {
+    try {
+      await archiveGrade(grade.id, !grade.isArchived);
+      onCloseMenu();
+    } catch (err) {
+      onMessage(err instanceof Error ? err.message : "Could not update grade.");
     }
   }
 
   async function handleDelete() {
     try {
       await deleteGrade(grade.id);
+      onCloseMenu();
     } catch (err) {
       onMessage(err instanceof Error ? err.message : "Could not delete grade.");
     }
@@ -314,18 +344,29 @@ function GradeRow({ grade, isDragging, onDragStart, onDragMove, onDragEnd, onMes
         ⋮⋮
       </button>
       <input value={label} onChange={(event) => setLabel(event.target.value)} aria-label="Grade label" />
+      <button
+        type="button"
+        className="grade-menu-button"
+        aria-expanded={isMenuOpen}
+        aria-label={`Open actions for ${grade.label}`}
+        onClick={onToggleMenu}
+      >
+        ...
+      </button>
       {grade.isArchived && <span className="grade-status">Archived</span>}
-      <div className="grade-actions">
-        <button type="button" onClick={handleSave}>
-          Save
-        </button>
-        <button type="button" onClick={() => archiveGrade(grade.id, !grade.isArchived)}>
-          {grade.isArchived ? "Restore" : "Archive"}
-        </button>
-        <button type="button" className="danger" onClick={handleDelete}>
-          Delete
-        </button>
-      </div>
+      {isMenuOpen && (
+        <div className="grade-actions">
+          <button type="button" onClick={handleSave}>
+            Save
+          </button>
+          <button type="button" onClick={handleArchive}>
+            {grade.isArchived ? "Restore" : "Archive"}
+          </button>
+          <button type="button" className="danger" onClick={handleDelete}>
+            Delete
+          </button>
+        </div>
+      )}
     </div>
   );
 }

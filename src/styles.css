@@ -397,11 +397,11 @@ h2 {
 
 .grade-row {
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr);
+  grid-template-columns: 38px minmax(0, 1fr) 42px;
   align-items: center;
   gap: 8px;
   min-width: 0;
-  padding: 8px;
+  padding: 6px 8px;
   border-bottom: 1px solid rgba(212, 221, 209, 0.08);
 }
 
@@ -415,7 +415,7 @@ h2 {
 
 .drag-handle {
   width: 34px;
-  min-height: 42px;
+  min-height: 38px;
   padding: 0;
   background: rgba(255, 255, 255, 0.08);
   color: #aab5ab;
@@ -425,9 +425,24 @@ h2 {
   touch-action: none;
 }
 
+.grade-menu-button {
+  width: 40px;
+  min-height: 38px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.08);
+  color: #dbe3d6;
+  font-size: 1rem;
+  font-weight: 950;
+}
+
+.grade-menu-button[aria-expanded="true"] {
+  background: rgba(215, 244, 95, 0.18);
+  color: #d7f45f;
+}
+
 .grade-actions {
   display: grid;
-  grid-column: 2;
+  grid-column: 2 / 4;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   min-width: 0;
@@ -449,6 +464,7 @@ h2 {
 
 .grade-status {
   grid-column: 2;
+  margin-top: -4px;
   color: #aab5ab;
   font-size: 0.78rem;
   font-weight: 800;
