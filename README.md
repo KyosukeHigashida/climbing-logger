@@ -26,7 +26,7 @@ GitHub Actions deploy uses the repository name as `VITE_BASE_PATH` automatically
 - 複数 Climb の作成と切り替え
 - FAIL / SEND attempt の記録
 - Attempt timestamp の ISO 8601 保存
-- Session timer と Rest timer の表示
+- Session timer と Interval timer の表示
 - IndexedDB によるリロード後の復元
 - 終了済みセッションの summary と timeline 表示
 - PWA manifest と Service Worker による app shell cache

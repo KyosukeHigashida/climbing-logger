@@ -6,7 +6,7 @@ import { AttemptEditor } from "../components/AttemptEditor";
 import { AttemptTimeline } from "../components/AttemptTimeline";
 import { ClimbForm } from "../components/ClimbForm";
 import { ClimbList } from "../components/ClimbList";
-import { RestTimer } from "../components/RestTimer";
+import { IntervalTimer } from "../components/IntervalTimer";
 import { SessionTimer } from "../components/SessionTimer";
 import {
   createAttemptForLoadedSessionClimb,
@@ -96,6 +96,7 @@ export function SessionPage() {
   const editingClimb = climbs.find((climb) => climb.id === editingClimbId) ?? null;
   const editingAttempt = attempts.find((attempt) => attempt.id === editingAttemptId) ?? null;
   const lastSessionAttempt = attempts.at(-1) ?? null;
+  const intervalStartedAt = lastSessionAttempt?.timestamp ?? activeSession.startedAt;
 
   async function handleAddClimb(grade: string, name: string | null) {
     if (!sessionId) {
@@ -165,9 +166,9 @@ export function SessionPage() {
                 <strong>{getAttemptCount(attempts, currentClimb.id)}</strong>
               </div>
               <div>
-                <span className="metric-label">Rest</span>
+                <span className="metric-label">Interval</span>
                 <strong>
-                  <RestTimer lastAttemptAt={lastSessionAttempt?.timestamp ?? null} />
+                  <IntervalTimer since={intervalStartedAt} />
                 </strong>
               </div>
             </div>

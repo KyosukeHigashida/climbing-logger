@@ -1,6 +1,6 @@
 import type { Attempt, Climb } from "../types/domain";
 import { getSessionAttemptIntervals, sortAttemptsByTimestampDesc } from "../utils/attempts";
-import { formatRestDuration, formatTime } from "../utils/time";
+import { formatIntervalDuration, formatTime } from "../utils/time";
 
 type AttemptTimelineProps = {
   attempts: Attempt[];
@@ -22,7 +22,7 @@ export function AttemptTimeline({ attempts, climbs, onEdit }: AttemptTimelinePro
         <ol className="timeline">
           {sortedAttempts.map((attempt) => {
             const climb = climbById.get(attempt.climbId);
-            const restMs = sessionIntervals.get(attempt.id) ?? null;
+            const intervalMs = sessionIntervals.get(attempt.id) ?? null;
 
             return (
               <li key={attempt.id} className="timeline-item">
@@ -41,8 +41,8 @@ export function AttemptTimeline({ attempts, climbs, onEdit }: AttemptTimelinePro
                   <div className={`result-pill ${attempt.result}`}>
                     {attempt.result.toUpperCase()}
                   </div>
-                  {restMs !== null && (
-                    <div className="timeline-rest">Rest from previous attempt: {formatRestDuration(restMs)}</div>
+                  {intervalMs !== null && (
+                    <div className="timeline-rest">Interval from previous attempt: {formatIntervalDuration(intervalMs)}</div>
                   )}
                   {onEdit && (
                     <button className="edit-attempt-button" onClick={() => onEdit(attempt)}>

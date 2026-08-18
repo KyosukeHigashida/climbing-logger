@@ -11,7 +11,7 @@ export function formatClockDuration(milliseconds: number): string {
   return [hours, minutes, seconds].map((value) => String(value).padStart(2, "0")).join(":");
 }
 
-export function formatRestDuration(milliseconds: number): string {
+export function formatIntervalDuration(milliseconds: number): string {
   const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
