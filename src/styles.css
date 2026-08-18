@@ -637,13 +637,58 @@ h2 {
 }
 
 .timeline-section {
+  padding: 0;
+  overflow: hidden;
   margin-bottom: 18px;
+}
+
+.timeline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 16px;
+  background: transparent;
+  color: #f4f7f1;
+  font-size: 1rem;
+  font-weight: 900;
+  text-align: left;
+}
+
+.timeline-header small {
+  color: #aab5ab;
+  font-size: 0.9rem;
+}
+
+.timeline-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #d7f45f;
+  font-size: 1.1rem;
+}
+
+.timeline-scroll {
+  max-height: min(320px, 38vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  border-top: 1px solid rgba(212, 221, 209, 0.1);
+  padding: 14px 16px 16px;
+  overflow-anchor: auto;
 }
 
 .timeline {
   display: grid;
   gap: 12px;
-  margin: 14px 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
