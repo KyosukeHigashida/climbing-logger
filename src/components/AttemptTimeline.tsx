@@ -1,15 +1,17 @@
-import type { Attempt, Climb } from "../types/domain";
+import type { Attempt, Climb, Gym } from "../types/domain";
 import { getSessionAttemptIntervals, sortAttemptsByTimestampDesc } from "../utils/attempts";
 import { formatIntervalDuration, formatTime } from "../utils/time";
 
 type AttemptTimelineProps = {
   attempts: Attempt[];
   climbs: Climb[];
+  gyms?: Gym[];
   onEdit?: (attempt: Attempt) => void;
 };
 
-export function AttemptTimeline({ attempts, climbs, onEdit }: AttemptTimelineProps) {
+export function AttemptTimeline({ attempts, climbs, gyms = [], onEdit }: AttemptTimelineProps) {
   const climbById = new Map(climbs.map((climb) => [climb.id, climb]));
+  const gymById = new Map(gyms.map((gym) => [gym.id, gym]));
   const sortedAttempts = sortAttemptsByTimestampDesc(attempts);
   const sessionIntervals = getSessionAttemptIntervals(attempts);
 
@@ -33,6 +35,9 @@ export function AttemptTimeline({ attempts, climbs, onEdit }: AttemptTimelinePro
                       <>
                         {climb.grade}
                         {climb.name ? ` ${climb.name}` : ""}
+                        {climb.gymId && gymById.get(climb.gymId) ? (
+                          <small className="climb-venue">{gymById.get(climb.gymId)?.name}</small>
+                        ) : null}
                       </>
                     ) : (
                       "Unknown climb"

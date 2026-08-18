@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { AttemptButtons } from "../components/AttemptButtons";
 import { AttemptEditor } from "../components/AttemptEditor";
 import { AttemptTimeline } from "../components/AttemptTimeline";
-import { ClimbForm } from "../components/ClimbForm";
+import { ClimbForm, type ClimbFormValue } from "../components/ClimbForm";
 import { ClimbList } from "../components/ClimbList";
 import { IntervalTimer } from "../components/IntervalTimer";
 import { SessionTimer } from "../components/SessionTimer";
@@ -13,15 +13,18 @@ import {
   createClimb,
   deleteAttempt,
   endSession,
+  getAllGrades,
+  getAllGyms,
   getSession,
   getSessionAttempts,
   getSessionClimbs,
   updateAttempt,
   updateClimb,
 } from "../db/repository";
-import type { Attempt, AttemptResult, Climb, Session } from "../types/domain";
+import type { Attempt, AttemptResult, Climb, Grade, Gym, Session } from "../types/domain";
 import { getAttemptCount } from "../utils/attempts";
 import { currentClimbStorageKey } from "../utils/currentClimb";
+import { getSavedCurrentVenueId, saveCurrentVenueId } from "../utils/currentVenue";
 
 export function SessionPage() {
   const { sessionId } = useParams();
@@ -30,6 +33,8 @@ export function SessionPage() {
   const [isAddingClimb, setIsAddingClimb] = useState(false);
   const [editingClimbId, setEditingClimbId] = useState<string | null>(null);
   const [editingAttemptId, setEditingAttemptId] = useState<string | null>(null);
+  const [currentVenueId, setCurrentVenueId] = useState<string | null>(null);
+  const [hasLoadedVenue, setHasLoadedVenue] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const session = useLiveQuery<Session | null>(
@@ -44,8 +49,15 @@ export function SessionPage() {
     () => (sessionId ? getSessionAttempts(sessionId) : Promise.resolve([] as Attempt[])),
     [sessionId],
   );
+  const gyms = useLiveQuery<Gym[]>(() => getAllGyms(), []);
+  const grades = useLiveQuery<Grade[]>(() => getAllGrades(), []);
 
   const orderedClimbs = useMemo(() => [...(climbs ?? [])].reverse(), [climbs]);
+
+  useEffect(() => {
+    setHasLoadedVenue(false);
+    setCurrentVenueId(null);
+  }, [sessionId]);
 
   useEffect(() => {
     if (sessionId && !currentClimbId) {
@@ -69,7 +81,24 @@ export function SessionPage() {
     }
   }, [currentClimbId, sessionId]);
 
-  if (session === undefined || !climbs || !attempts) {
+  useEffect(() => {
+    if (!sessionId || !session || !gyms || hasLoadedVenue) {
+      return;
+    }
+    const storedVenueId = getSavedCurrentVenueId(sessionId);
+    const storedVenue = storedVenueId ? gyms.find((gym) => gym.id === storedVenueId) : null;
+    const initialVenue = session.initialGymId ? gyms.find((gym) => gym.id === session.initialGymId) : null;
+    setCurrentVenueId(storedVenue?.id ?? initialVenue?.id ?? null);
+    setHasLoadedVenue(true);
+  }, [gyms, hasLoadedVenue, session, sessionId]);
+
+  useEffect(() => {
+    if (sessionId && hasLoadedVenue) {
+      saveCurrentVenueId(sessionId, currentVenueId);
+    }
+  }, [currentVenueId, hasLoadedVenue, sessionId]);
+
+  if (session === undefined || !climbs || !attempts || !gyms || !grades) {
     return <main className="app-shell loading">Loading session...</main>;
   }
 
@@ -97,22 +126,38 @@ export function SessionPage() {
   const editingAttempt = attempts.find((attempt) => attempt.id === editingAttemptId) ?? null;
   const lastSessionAttempt = attempts.at(-1) ?? null;
   const intervalStartedAt = lastSessionAttempt?.timestamp ?? activeSession.startedAt;
+  const currentVenue = currentVenueId ? gyms.find((gym) => gym.id === currentVenueId) ?? null : null;
+  const activeGyms = gyms.filter((gym) => !gym.isArchived || gym.id === currentVenueId);
+  const currentVenueGrades = grades
+    .filter((grade) => grade.gymId === currentVenueId && !grade.isArchived)
+    .sort((a, b) => a.order - b.order);
+  const editingClimbGrades = editingClimb
+    ? grades
+        .filter((grade) => grade.gymId === (editingClimb.gymId ?? null) && (!grade.isArchived || grade.id === editingClimb.gradeId))
+        .sort((a, b) => a.order - b.order)
+    : [];
+  const editingVenue = editingClimb?.gymId ? gyms.find((gym) => gym.id === editingClimb.gymId) ?? null : null;
 
-  async function handleAddClimb(grade: string, name: string | null) {
+  async function handleAddClimb(value: ClimbFormValue) {
     if (!sessionId) {
       return;
     }
-    const climb = await createClimb(sessionId, grade, name);
+    const climb = await createClimb(sessionId, value.grade, value.name, value.gymId, value.gradeId);
     setCurrentClimbId(climb.id);
     setIsAddingClimb(false);
   }
 
-  async function handleEditClimb(grade: string, name: string | null) {
+  async function handleEditClimb(value: ClimbFormValue) {
     if (!editingClimbId) {
       return;
     }
-    await updateClimb(editingClimbId, grade, name);
+    await updateClimb(editingClimbId, value.grade, value.name, value.gymId, value.gradeId);
     setEditingClimbId(null);
+  }
+
+  function handleVenueChange(nextVenueId: string) {
+    setCurrentVenueId(nextVenueId || null);
+    setIsAddingClimb(false);
   }
 
   async function handleAttempt(result: AttemptResult) {
@@ -149,9 +194,22 @@ export function SessionPage() {
             <SessionTimer startedAt={session.startedAt} />
           </h1>
         </div>
-        <Link to="/" className="ghost-link">
-          Home
-        </Link>
+        <div className="session-header-actions">
+          <label className="venue-selector">
+            <span>Venue</span>
+            <select value={currentVenueId ?? ""} onChange={(event) => handleVenueChange(event.target.value)}>
+              <option value="">No venue</option>
+              {activeGyms.map((gym) => (
+                <option key={gym.id} value={gym.id}>
+                  {gym.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Link to="/" className="ghost-link">
+            Home
+          </Link>
+        </div>
       </header>
 
       <section className="panel current-climb">
@@ -184,6 +242,8 @@ export function SessionPage() {
 
       {isAddingClimb && (
         <ClimbForm
+          currentVenue={currentVenue}
+          grades={currentVenueGrades}
           onCancel={() => setIsAddingClimb(false)}
           onSubmit={handleAddClimb}
           submitLabel="START CLIMB"
@@ -194,7 +254,11 @@ export function SessionPage() {
         <ClimbForm
           key={editingClimb.id}
           initialGrade={editingClimb.grade}
+          initialGradeId={editingClimb.gradeId ?? null}
+          initialGymId={editingClimb.gymId ?? null}
           initialName={editingClimb.name}
+          currentVenue={editingVenue}
+          grades={editingClimbGrades}
           onCancel={() => setEditingClimbId(null)}
           onSubmit={handleEditClimb}
           submitLabel="SAVE CLIMB"
@@ -204,6 +268,7 @@ export function SessionPage() {
       <ClimbList
         climbs={orderedClimbs}
         attempts={attempts}
+        gyms={gyms}
         currentClimbId={currentClimbId}
         onSelect={setCurrentClimbId}
         onAdd={() => {
@@ -221,6 +286,7 @@ export function SessionPage() {
           key={editingAttempt.id}
           attempt={editingAttempt}
           climbs={climbs}
+          gyms={gyms}
           sessionStartedAt={session.startedAt}
           sessionEndedAt={session.endedAt}
           onCancel={() => setEditingAttemptId(null)}
@@ -229,7 +295,7 @@ export function SessionPage() {
         />
       )}
 
-      <AttemptTimeline attempts={attempts} climbs={climbs} onEdit={(attempt) => setEditingAttemptId(attempt.id)} />
+      <AttemptTimeline attempts={attempts} climbs={climbs} gyms={gyms} onEdit={(attempt) => setEditingAttemptId(attempt.id)} />
 
       <button className="danger full end-button" onClick={handleEndSession}>
         END SESSION

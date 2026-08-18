@@ -6,6 +6,7 @@ import {
   createSession,
   exportAllData,
   getActiveSession,
+  getActiveGyms,
   getAllAttempts,
   getAllSessions,
   restoreAllData,
@@ -18,15 +19,17 @@ export function HomePage() {
   const navigate = useNavigate();
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
+  const [selectedGymId, setSelectedGymId] = useState<string>("");
   const sessions = useLiveQuery(() => getAllSessions(), []);
   const attempts = useLiveQuery(() => getAllAttempts(), []);
   const activeSession = useLiveQuery(() => getActiveSession(), []);
+  const gyms = useLiveQuery(() => getActiveGyms(), []);
 
   useEffect(() => {
     void requestPersistentStorage();
   }, []);
 
-  if (!sessions || !attempts || activeSession === undefined) {
+  if (!sessions || !attempts || activeSession === undefined || !gyms) {
     return <main className="app-shell loading">Loading climbing log...</main>;
   }
 
@@ -34,7 +37,7 @@ export function HomePage() {
 
   async function handleStartSession() {
     try {
-      const session = await createSession();
+      const session = await createSession(selectedGymId || null);
       navigate(`/session/${session.id}`);
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "Could not start session.");
@@ -79,7 +82,7 @@ export function HomePage() {
       const parsed = JSON.parse(await file.text()) as unknown;
       const restored = await restoreAllData(parsed);
       setRestoreMessage(
-        `Restored ${restored.sessions.length} sessions, ${restored.climbs.length} climbs, ${restored.attempts.length} attempts.`,
+        `Restored ${restored.gyms.length} gyms, ${restored.grades.length} grades, ${restored.sessions.length} sessions, ${restored.climbs.length} climbs, ${restored.attempts.length} attempts.`,
       );
     } catch (err) {
       setRestoreMessage(err instanceof Error ? err.message : "Could not restore backup.");
@@ -108,9 +111,25 @@ export function HomePage() {
           </button>
         </section>
       ) : (
-        <button className="primary start-button" onClick={handleStartSession}>
-          START SESSION
-        </button>
+        <section className="panel new-session-panel">
+          <label>
+            Gym
+            <select value={selectedGymId} onChange={(event) => setSelectedGymId(event.target.value)}>
+              <option value="">No gym</option>
+              {gyms.map((gym) => (
+                <option key={gym.id} value={gym.id}>
+                  {gym.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="primary start-button" onClick={handleStartSession}>
+            START SESSION
+          </button>
+          <button className="secondary full manage-link-button" onClick={() => navigate("/gyms")}>
+            Manage Gyms
+          </button>
+        </section>
       )}
 
       <section className="section">

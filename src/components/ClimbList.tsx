@@ -1,17 +1,19 @@
-import type { Attempt, Climb } from "../types/domain";
+import type { Attempt, Climb, Gym } from "../types/domain";
 import { getAttemptCountsByClimb } from "../utils/attempts";
 
 type ClimbListProps = {
   climbs: Climb[];
   attempts: Attempt[];
+  gyms?: Gym[];
   currentClimbId: string | null;
   onSelect: (climbId: string) => void;
   onAdd: () => void;
   onEdit: (climb: Climb) => void;
 };
 
-export function ClimbList({ climbs, attempts, currentClimbId, onSelect, onAdd, onEdit }: ClimbListProps) {
+export function ClimbList({ climbs, attempts, gyms = [], currentClimbId, onSelect, onAdd, onEdit }: ClimbListProps) {
   const attemptCounts = getAttemptCountsByClimb(attempts);
+  const gymById = new Map(gyms.map((gym) => [gym.id, gym]));
 
   return (
     <section className="section">
@@ -34,6 +36,9 @@ export function ClimbList({ climbs, attempts, currentClimbId, onSelect, onAdd, o
                 <span>
                   <strong>{climb.grade}</strong>
                   {climb.name ? ` ${climb.name}` : ""}
+                  {climb.gymId && gymById.get(climb.gymId) ? (
+                    <small className="climb-venue">{gymById.get(climb.gymId)?.name}</small>
+                  ) : null}
                 </span>
                 <span className="muted">{attemptCounts.get(climb.id) ?? 0} attempts</span>
               </button>

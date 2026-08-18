@@ -5,13 +5,14 @@ import { AttemptTimeline } from "../components/AttemptTimeline";
 import {
   deleteAttempt,
   deleteSession,
+  getAllGyms,
   getSession,
   getSessionAttempts,
   getSessionClimbs,
   reopenSession,
   updateAttempt,
 } from "../db/repository";
-import type { Attempt, Climb, Session } from "../types/domain";
+import type { Attempt, Climb, Gym, Session } from "../types/domain";
 import { getFailCount, getSendCount } from "../utils/attempts";
 import { formatSessionDuration, formatShortDate } from "../utils/time";
 import { useState } from "react";
@@ -32,8 +33,9 @@ export function SessionSummaryPage() {
     () => (sessionId ? getSessionAttempts(sessionId) : Promise.resolve([] as Attempt[])),
     [sessionId],
   );
+  const gyms = useLiveQuery<Gym[]>(() => getAllGyms(), []);
 
-  if (session === undefined || !climbs || !attempts) {
+  if (session === undefined || !climbs || !attempts || !gyms) {
     return <main className="app-shell loading">Loading summary...</main>;
   }
 
@@ -141,6 +143,7 @@ export function SessionSummaryPage() {
           key={editingAttempt.id}
           attempt={editingAttempt}
           climbs={climbs}
+          gyms={gyms}
           sessionStartedAt={session.startedAt}
           sessionEndedAt={session.endedAt}
           onCancel={() => setEditingAttemptId(null)}
@@ -149,7 +152,7 @@ export function SessionSummaryPage() {
         />
       )}
 
-      <AttemptTimeline attempts={attempts} climbs={climbs} onEdit={(attempt) => setEditingAttemptId(attempt.id)} />
+      <AttemptTimeline attempts={attempts} climbs={climbs} gyms={gyms} onEdit={(attempt) => setEditingAttemptId(attempt.id)} />
     </main>
   );
 }

@@ -1,10 +1,11 @@
 import { type FormEvent, useState } from "react";
-import type { Attempt, AttemptResult, Climb } from "../types/domain";
+import type { Attempt, AttemptResult, Climb, Gym } from "../types/domain";
 import { applyLocalTimeWithinRange, formatReadableDate, toTimeInputValue } from "../utils/time";
 
 type AttemptEditorProps = {
   attempt: Attempt;
   climbs: Climb[];
+  gyms?: Gym[];
   sessionStartedAt: string;
   sessionEndedAt: string | null;
   onCancel: () => void;
@@ -15,6 +16,7 @@ type AttemptEditorProps = {
 export function AttemptEditor({
   attempt,
   climbs,
+  gyms = [],
   sessionStartedAt,
   sessionEndedAt,
   onCancel,
@@ -25,6 +27,7 @@ export function AttemptEditor({
   const initialTime = toTimeInputValue(attempt.timestamp);
   const [time, setTime] = useState(initialTime);
   const [climbId, setClimbId] = useState(attempt.climbId);
+  const gymById = new Map(gyms.map((gym) => [gym.id, gym]));
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -102,6 +105,7 @@ export function AttemptEditor({
             <option key={climb.id} value={climb.id}>
               {climb.grade}
               {climb.name ? ` ${climb.name}` : ""}
+              {climb.gymId && gymById.get(climb.gymId) ? ` / ${gymById.get(climb.gymId)?.name}` : ""}
             </option>
           ))}
         </select>

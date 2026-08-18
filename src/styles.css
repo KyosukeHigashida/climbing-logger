@@ -209,6 +209,14 @@ h2 {
   font-weight: 800;
 }
 
+.climb-venue {
+  display: block;
+  margin-top: 2px;
+  color: #aab5ab;
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
 .metrics-grid,
 .summary-panel {
   display: grid;
@@ -270,6 +278,10 @@ h2 {
 }
 
 .climb-form input,
+.climb-form select,
+.new-session-panel select,
+.inline-form input,
+.grade-row input,
 .attempt-editor input,
 .attempt-editor select {
   width: 100%;
@@ -281,6 +293,144 @@ h2 {
   background: #101713;
   color: #f4f7f1;
   font-size: 1rem;
+}
+
+.new-session-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.new-session-panel label {
+  display: grid;
+  gap: 8px;
+  color: #aab5ab;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.manage-link-button {
+  min-height: 44px;
+}
+
+.session-header-actions {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.venue-selector {
+  display: grid;
+  gap: 4px;
+  color: #aab5ab;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.venue-selector select {
+  width: 136px;
+  min-height: 36px;
+  border: 1px solid rgba(212, 221, 209, 0.14);
+  border-radius: 8px;
+  padding: 0 8px;
+  background: #101713;
+  color: #f4f7f1;
+  font-size: 0.82rem;
+  text-transform: none;
+}
+
+.gym-list {
+  display: grid;
+  gap: 8px;
+}
+
+.gym-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0 12px;
+  background: rgba(255, 255, 255, 0.055);
+  color: #f4f7f1;
+  text-align: left;
+  font-weight: 850;
+}
+
+.gym-row.selected {
+  outline: 2px solid #d7f45f;
+}
+
+.gym-row small,
+.grade-row.archived input {
+  color: #aab5ab;
+}
+
+.inline-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.inline-form button {
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+.compact-form {
+  margin-top: 0;
+  box-shadow: none;
+}
+
+.grade-heading {
+  margin-top: 16px;
+}
+
+.grade-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.grade-row {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.grade-actions {
+  display: grid;
+  grid-template-columns: 42px 42px repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 0;
+}
+
+.grade-actions button {
+  min-height: 38px;
+  padding: 0 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f4f7f1;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+@media (max-width: 380px) {
+  .grade-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.grade-actions .danger {
+  background: rgba(255, 107, 95, 0.82);
+  color: #1b0d0b;
+}
+
+.gym-danger-zone {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
 }
 
 .attempt-editor .timestamp-input {

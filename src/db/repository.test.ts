@@ -1,17 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "./db";
 import {
+  archiveGrade,
+  archiveGym,
   createAttempt,
   createAttemptForLoadedSessionClimb,
   createClimb,
+  createGrade,
+  createGym,
   createSession,
   deleteAttempt,
+  deleteGrade,
+  deleteGym,
   deleteSession,
   endSession,
   exportAllData,
   getActiveSession,
+  getGymGrades,
   getSessionAttempts,
   getSessionClimbs,
+  moveGrade,
   reopenSession,
   restoreAllData,
   updateAttempt,
@@ -38,6 +46,85 @@ async function insertClimb(climb: Climb) {
 }
 
 describe("repository", () => {
+  it("creates gyms and grades, reorders grades, archives records, and deletes only unused records", async () => {
+    setNow("2026-08-17T09:00:00.000Z");
+    const gym = await createGym("BETA");
+    const gradeA = await createGrade(gym.id, "2Q");
+    const gradeB = await createGrade(gym.id, "1Q");
+
+    expect((await getGymGrades(gym.id)).map((grade) => grade.label)).toEqual(["2Q", "1Q"]);
+
+    await moveGrade(gradeB.id, "up");
+    expect((await getGymGrades(gym.id)).map((grade) => grade.label)).toEqual(["1Q", "2Q"]);
+
+    await archiveGrade(gradeA.id);
+    expect((await getGymGrades(gym.id)).map((grade) => grade.id)).toEqual([gradeB.id]);
+
+    await archiveGym(gym.id);
+    expect((await db.gyms.get(gym.id))?.isArchived).toBe(true);
+    await archiveGym(gym.id, false);
+
+    await deleteGrade(gradeA.id);
+    expect(await db.grades.get(gradeA.id)).toBeUndefined();
+
+    const unusedGym = await createGym("Unused");
+    await createGrade(unusedGym.id, "V4");
+    await deleteGym(unusedGym.id);
+    expect(await db.gyms.get(unusedGym.id)).toBeUndefined();
+    expect(await db.grades.where("gymId").equals(unusedGym.id).count()).toBe(0);
+  });
+
+  it("rejects hard delete for used gyms and grades", async () => {
+    const gym = await createGym("B-PUMP");
+    const grade = await createGrade(gym.id, "3Q");
+    const session = await createSession(gym.id);
+    await createClimb(session.id, grade.label, "Green", gym.id, grade.id);
+
+    await expect(deleteGrade(grade.id)).rejects.toThrow("Used grades can only be archived.");
+    await expect(deleteGym(gym.id)).rejects.toThrow("Used gyms can only be archived.");
+  });
+
+  it("validates climb gym and grade relationships at repository level", async () => {
+    const gymA = await createGym("BETA");
+    const gymB = await createGym("Kilter Board");
+    const gradeA = await createGrade(gymA.id, "2Q");
+    const gradeB = await createGrade(gymB.id, "V4");
+    const session = await createSession(gymA.id);
+
+    const climb = await createClimb(session.id, gradeA.label, "A", gymA.id, gradeA.id);
+    expect(climb).toMatchObject({
+      gymId: gymA.id,
+      gradeId: gradeA.id,
+      grade: "2Q",
+    });
+
+    await expect(createClimb(session.id, gradeB.label, "Wrong", gymA.id, gradeB.id)).rejects.toThrow(
+      "Climb gym and grade do not match.",
+    );
+
+    await archiveGrade(gradeA.id);
+    await expect(createClimb(session.id, gradeA.label, "Archived", gymA.id, gradeA.id)).rejects.toThrow(
+      "Archived grades cannot be used for new records.",
+    );
+  });
+
+  it("stores per-climb venue when current venue changes without mutating existing climbs", async () => {
+    const beta = await createGym("BETA");
+    const kilter = await createGym("Kilter Board");
+    const betaGrade = await createGrade(beta.id, "2Q");
+    const kilterGrade = await createGrade(kilter.id, "V4");
+    const session = await createSession(beta.id);
+
+    const climbA = await createClimb(session.id, betaGrade.label, "A", beta.id, betaGrade.id);
+    const climbB = await createClimb(session.id, kilterGrade.label, "B", kilter.id, kilterGrade.id);
+    const climbC = await createClimb(session.id, betaGrade.label, "C", beta.id, betaGrade.id);
+
+    expect((await db.sessions.get(session.id))?.initialGymId).toBe(beta.id);
+    expect((await db.climbs.get(climbA.id))?.gymId).toBe(beta.id);
+    expect((await db.climbs.get(climbB.id))?.gymId).toBe(kilter.id);
+    expect((await db.climbs.get(climbC.id))?.gymId).toBe(beta.id);
+  });
+
   it("creates an attempt only when session and climb belong together", async () => {
     setNow("2026-08-17T09:00:00.000Z");
     const sessionA = await createSession();
@@ -307,14 +394,20 @@ describe("repository", () => {
 
   it("restores active session data after reopening the IndexedDB connection", async () => {
     setNow("2026-08-17T09:00:00.000Z");
-    const session = await createSession();
-    const climb = await createClimb(session.id, "2Q", "A");
+    const gym = await createGym("BETA");
+    const grade = await createGrade(gym.id, "2Q");
+    const session = await createSession(gym.id);
+    const climb = await createClimb(session.id, grade.label, "A", gym.id, grade.id);
     await createAttempt(session.id, climb.id, "fail");
 
     db.close();
     await db.open();
 
     expect((await getActiveSession())?.id).toBe(session.id);
+    expect((await db.gyms.get(gym.id))?.name).toBe("BETA");
+    expect((await db.grades.get(grade.id))?.label).toBe("2Q");
+    expect((await db.sessions.get(session.id))?.initialGymId).toBe(gym.id);
+    expect((await db.climbs.get(climb.id))?.gradeId).toBe(grade.id);
     expect(await getSessionClimbs(session.id)).toHaveLength(1);
     expect(await getSessionAttempts(session.id)).toHaveLength(1);
   });
@@ -335,8 +428,10 @@ describe("repository", () => {
     const exported = await exportAllData();
     const exportedAttempt = exported.attempts.find((item) => item.id === attempt.id);
 
-    expect(exported.schemaVersion).toBe(2);
+    expect(exported.schemaVersion).toBe(3);
     expect(exported.exportedAt).toBe("2026-08-17T09:01:00.000Z");
+    expect(exported.gyms).toHaveLength(0);
+    expect(exported.grades).toHaveLength(0);
     expect(exported.sessions).toHaveLength(1);
     expect(exported.climbs).toHaveLength(1);
     expect(exported.attempts).toHaveLength(1);
@@ -357,13 +452,32 @@ describe("repository", () => {
     await createAttempt(oldSession.id, oldClimb.id, "fail");
 
     const backup = {
-      schemaVersion: 2,
+      schemaVersion: 3,
       exportedAt: "2026-08-18T00:00:00.000Z",
+      gyms: [
+        {
+          id: "gym-restored",
+          name: "BETA",
+          isArchived: false,
+          createdAt: "2026-08-17T09:59:00.000Z",
+        },
+      ],
+      grades: [
+        {
+          id: "grade-restored",
+          gymId: "gym-restored",
+          label: "2Q",
+          order: 0,
+          isArchived: false,
+          createdAt: "2026-08-17T09:59:30.000Z",
+        },
+      ],
       sessions: [
         {
           id: "session-restored",
           startedAt: "2026-08-17T10:00:00.000Z",
           endedAt: null,
+          initialGymId: "gym-restored",
           createdAt: "2026-08-17T10:00:00.000Z",
         },
       ],
@@ -372,6 +486,8 @@ describe("repository", () => {
           id: "climb-restored",
           sessionId: "session-restored",
           grade: "2Q",
+          gymId: "gym-restored",
+          gradeId: "grade-restored",
           name: "Restored",
           createdAt: "2026-08-17T10:01:00.000Z",
         },
@@ -391,10 +507,17 @@ describe("repository", () => {
 
     const restored = await restoreAllData(backup);
 
+    expect(restored.gyms).toHaveLength(1);
+    expect(restored.grades).toHaveLength(1);
     expect(restored.sessions).toHaveLength(1);
     expect(await db.sessions.get(oldSession.id)).toBeUndefined();
     expect(await db.sessions.get("session-restored")).toBeTruthy();
-    expect(await db.climbs.get("climb-restored")).toBeTruthy();
+    expect(await db.gyms.get("gym-restored")).toBeTruthy();
+    expect(await db.grades.get("grade-restored")).toBeTruthy();
+    expect(await db.climbs.get("climb-restored")).toMatchObject({
+      gymId: "gym-restored",
+      gradeId: "grade-restored",
+    });
     expect(await db.attempts.get("attempt-restored")).toMatchObject({
       result: "send",
       updatedAt: "2026-08-17T10:03:00.000Z",
@@ -433,8 +556,39 @@ describe("repository", () => {
     ).rejects.toThrow("Backup contains an attempt for a missing climb.");
   });
 
-  it("opens schema version 2 and reads old records without updatedAt", async () => {
-    expect(db.verno).toBe(2);
+  it("restores legacy schema version 2 backups without guessing gyms or grades", async () => {
+    const legacy = validateDataExport({
+      schemaVersion: 2,
+      exportedAt: "2026-08-18T00:00:00.000Z",
+      sessions: [
+        {
+          id: "legacy-session",
+          startedAt: "2026-08-17T10:00:00.000Z",
+          endedAt: null,
+          createdAt: "2026-08-17T10:00:00.000Z",
+        },
+      ],
+      climbs: [
+        {
+          id: "legacy-climb",
+          sessionId: "legacy-session",
+          grade: "2Q",
+          name: null,
+          createdAt: "2026-08-17T10:01:00.000Z",
+        },
+      ],
+      attempts: [],
+    });
+
+    expect(legacy.schemaVersion).toBe(3);
+    expect(legacy.gyms).toEqual([]);
+    expect(legacy.grades).toEqual([]);
+    expect(legacy.sessions[0].initialGymId).toBeNull();
+    expect(legacy.climbs[0]).toMatchObject({ grade: "2Q", gymId: null, gradeId: null });
+  });
+
+  it("opens schema version 3 and reads old records without updatedAt or gym fields", async () => {
+    expect(db.verno).toBe(3);
 
     const oldSession: Session = {
       id: "old-session",

@@ -1,7 +1,26 @@
+export type Gym = {
+  id: string;
+  name: string;
+  isArchived: boolean;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type Grade = {
+  id: string;
+  gymId: string;
+  label: string;
+  order: number;
+  isArchived: boolean;
+  createdAt: string;
+  updatedAt?: string;
+};
+
 export type Session = {
   id: string;
   startedAt: string;
   endedAt: string | null;
+  initialGymId?: string | null;
   createdAt: string;
   updatedAt?: string;
 };
@@ -10,6 +29,8 @@ export type Climb = {
   id: string;
   sessionId: string;
   grade: string;
+  gymId?: string | null;
+  gradeId?: string | null;
   name: string | null;
   createdAt: string;
   updatedAt?: string;
