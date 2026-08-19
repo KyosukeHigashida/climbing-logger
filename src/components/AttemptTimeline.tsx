@@ -1,6 +1,8 @@
 import { useState } from "react";
 import type { Attempt, Climb, Gym } from "../types/domain";
 import { getSessionAttemptIntervals, sortAttemptsByTimestampDesc } from "../utils/attempts";
+import { formatClimbLabel } from "../utils/climbs";
+import { effortLabels } from "../utils/effort";
 import { formatIntervalDuration, formatTime } from "../utils/time";
 
 type AttemptTimelineProps = {
@@ -50,7 +52,7 @@ export function AttemptTimeline({ attempts, climbs, gyms = [], onEdit }: Attempt
                       <div className="timeline-title">
                         {climb ? (
                           <>
-                            {climb.grade}
+                            {formatClimbLabel(climb)}
                             {climb.name ? ` ${climb.name}` : ""}
                             {climb.gymId && gymById.get(climb.gymId) ? (
                               <small className="climb-venue">{gymById.get(climb.gymId)?.name}</small>
@@ -63,6 +65,9 @@ export function AttemptTimeline({ attempts, climbs, gyms = [], onEdit }: Attempt
                       <div className={`result-pill ${attempt.result}`}>
                         {attempt.result.toUpperCase()}
                       </div>
+                      {attempt.effort !== undefined && (
+                        <div className="timeline-effort">Effort: {effortLabels[attempt.effort]}</div>
+                      )}
                       {intervalMs !== null && (
                         <div className="timeline-rest">
                           Interval from previous attempt: {formatIntervalDuration(intervalMs)}

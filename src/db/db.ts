@@ -28,3 +28,11 @@ db.version(3).stores({
   climbs: "id, sessionId, gymId, gradeId, createdAt, updatedAt",
   attempts: "id, sessionId, climbId, timestamp, createdAt, updatedAt",
 });
+
+db.version(4).stores({
+  gyms: "id, name, isArchived, createdAt, updatedAt",
+  grades: "id, gymId, order, isArchived, createdAt, updatedAt",
+  sessions: "id, startedAt, endedAt, initialGymId, createdAt, updatedAt",
+  climbs: "id, sessionId, gymId, gradeId, wallAngle, createdAt, updatedAt",
+  attempts: "id, sessionId, climbId, timestamp, result, effort, createdAt, updatedAt",
+});

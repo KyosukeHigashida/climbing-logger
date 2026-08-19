@@ -197,10 +197,23 @@ h2 {
   gap: 16px;
 }
 
+.current-grade-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
 .grade-display {
-  font-size: 4.4rem;
+  font-size: 3.6rem;
   font-weight: 950;
   line-height: 0.95;
+}
+
+.wall-angle-badge {
+  color: #dbe3d6;
+  font-size: 1.35rem;
+  font-weight: 950;
 }
 
 .climb-name {
@@ -261,6 +274,63 @@ h2 {
   background: #68e0a2;
 }
 
+.post-attempt-effort,
+.effort-editor {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(212, 221, 209, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.small-text-action {
+  min-height: 34px;
+  padding: 0 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #dbe3d6;
+  font-size: 0.8rem;
+  font-weight: 850;
+}
+
+.effort-input {
+  display: grid;
+  gap: 8px;
+}
+
+.effort-value {
+  color: #f4f7f1;
+  font-size: 0.95rem;
+  font-weight: 900;
+}
+
+.effort-input input[type="range"] {
+  width: 100%;
+  min-height: 32px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  accent-color: #d7f45f;
+}
+
+.effort-scale {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  color: #aab5ab;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.effort-scale span:nth-child(2),
+.effort-scale span:nth-child(3) {
+  text-align: center;
+}
+
+.effort-scale span:last-child {
+  text-align: right;
+}
+
 .climb-form,
 .attempt-editor {
   display: grid;
@@ -293,6 +363,19 @@ h2 {
   background: #101713;
   color: #f4f7f1;
   font-size: 1rem;
+}
+
+.angle-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.angle-input-row span {
+  color: #dbe3d6;
+  font-size: 1.1rem;
+  font-weight: 900;
 }
 
 .new-session-panel {
@@ -737,12 +820,14 @@ h2 {
 }
 
 .timeline-rest,
+.timeline-effort,
 .empty,
 .muted {
   color: #aab5ab;
 }
 
-.timeline-rest {
+.timeline-rest,
+.timeline-effort {
   margin-top: 8px;
   font-size: 0.9rem;
 }

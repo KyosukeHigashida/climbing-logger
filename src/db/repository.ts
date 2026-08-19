@@ -1,9 +1,9 @@
 import { db } from "./db";
-import type { Attempt, AttemptResult, Climb, Grade, Gym, Session } from "../types/domain";
+import type { Attempt, AttemptEffort, AttemptResult, Climb, Grade, Gym, Session } from "../types/domain";
 import { generateId } from "../utils/id";
 import { nowIso } from "../utils/time";
 
-const CURRENT_SCHEMA_VERSION = 3;
+const CURRENT_SCHEMA_VERSION = 4;
 
 export type DataExport = {
   schemaVersion: number;
@@ -19,6 +19,15 @@ export type AttemptUpdate = {
   result: AttemptResult;
   timestamp: string;
   climbId: string;
+  effort?: AttemptEffort | null;
+};
+
+export type ClimbUpdate = {
+  grade: string;
+  name: string | null;
+  gymId?: string | null;
+  gradeId?: string | null;
+  wallAngle?: number | null;
 };
 
 export function getAllGyms(): Promise<Gym[]> {
@@ -288,6 +297,7 @@ export async function createClimb(
   name: string | null,
   gymId: string | null = null,
   gradeId: string | null = null,
+  wallAngle: number | null = null,
 ): Promise<Climb> {
   const session = await db.sessions.get(sessionId);
   if (!session) {
@@ -302,6 +312,7 @@ export async function createClimb(
     grade: resolvedGrade,
     gymId,
     gradeId,
+    ...(wallAngle !== null ? { wallAngle: validateWallAngleValue(wallAngle) } : {}),
     name: name && name.trim().length > 0 ? name.trim() : null,
     createdAt: timestamp,
   };
@@ -316,6 +327,7 @@ export async function updateClimb(
   name: string | null,
   gymId?: string | null,
   gradeId?: string | null,
+  wallAngle?: number | null,
 ): Promise<void> {
   const climb = await db.climbs.get(climbId);
   if (!climb) {
@@ -333,6 +345,7 @@ export async function updateClimb(
     grade: resolvedGrade,
     gymId: nextGymId,
     gradeId: nextGradeId,
+    wallAngle: wallAngle === undefined ? climb.wallAngle : wallAngle === null ? undefined : validateWallAngleValue(wallAngle),
     name: name && name.trim().length > 0 ? name.trim() : null,
     updatedAt: nowIso(),
   });
@@ -433,6 +446,19 @@ export async function updateAttempt(attemptId: string, update: AttemptUpdate): P
     climbId: update.climbId,
     result: update.result,
     timestamp: new Date(update.timestamp).toISOString(),
+    effort: update.effort === null ? undefined : update.effort === undefined ? attempt.effort : validateEffortValue(update.effort),
+    updatedAt: nowIso(),
+  });
+}
+
+export async function updateAttemptEffort(attemptId: string, effort: AttemptEffort | null): Promise<void> {
+  const attempt = await db.attempts.get(attemptId);
+  if (!attempt) {
+    throw new Error("Attempt does not exist.");
+  }
+
+  await db.attempts.update(attemptId, {
+    effort: effort === null ? undefined : validateEffortValue(effort),
     updatedAt: nowIso(),
   });
 }
@@ -490,7 +516,7 @@ export function validateDataExport(data: unknown): DataExport {
     throw new Error("Backup must be a JSON object.");
   }
 
-  if (data.schemaVersion !== 2 && data.schemaVersion !== 3) {
+  if (data.schemaVersion !== 2 && data.schemaVersion !== 3 && data.schemaVersion !== 4) {
     throw new Error("Unsupported backup schema version.");
   }
 
@@ -501,14 +527,14 @@ export function validateDataExport(data: unknown): DataExport {
   if (!Array.isArray(data.sessions) || !Array.isArray(data.climbs) || !Array.isArray(data.attempts)) {
     throw new Error("Backup must include sessions, climbs, and attempts arrays.");
   }
-  if (data.schemaVersion === 3 && (!Array.isArray(data.gyms) || !Array.isArray(data.grades))) {
+  if ((data.schemaVersion === 3 || data.schemaVersion === 4) && (!Array.isArray(data.gyms) || !Array.isArray(data.grades))) {
     throw new Error("Backup must include gyms and grades arrays.");
   }
 
   const rawGyms = Array.isArray(data.gyms) ? data.gyms : [];
   const rawGrades = Array.isArray(data.grades) ? data.grades : [];
-  const gyms: Gym[] = data.schemaVersion === 3 ? rawGyms.map(validateGym) : [];
-  const grades: Grade[] = data.schemaVersion === 3 ? rawGrades.map(validateGrade) : [];
+  const gyms: Gym[] = data.schemaVersion === 3 || data.schemaVersion === 4 ? rawGyms.map(validateGym) : [];
+  const grades: Grade[] = data.schemaVersion === 3 || data.schemaVersion === 4 ? rawGrades.map(validateGrade) : [];
   const sessions: Session[] = data.sessions.map(validateSession);
   const climbs: Climb[] = data.climbs.map(validateClimb);
   const attempts: Attempt[] = data.attempts.map(validateAttempt);
@@ -715,6 +741,10 @@ function validateClimb(value: unknown): Climb {
     name: readNullableString(value, "name"),
     createdAt: readIsoString(value, "createdAt"),
   };
+  const wallAngle = readOptionalNumber(value, "wallAngle");
+  if (wallAngle !== undefined) {
+    climb.wallAngle = validateWallAngleValue(wallAngle);
+  }
   const updatedAt = readOptionalIsoString(value, "updatedAt");
   if (updatedAt) {
     climb.updatedAt = updatedAt;
@@ -738,6 +768,10 @@ function validateAttempt(value: unknown): Attempt {
     result,
     createdAt: readIsoString(value, "createdAt"),
   };
+  const effort = readOptionalNumber(value, "effort");
+  if (effort !== undefined) {
+    attempt.effort = validateEffortValue(effort);
+  }
   const updatedAt = readOptionalIsoString(value, "updatedAt");
   if (updatedAt) {
     attempt.updatedAt = updatedAt;
@@ -791,6 +825,31 @@ function readNumber(record: Record<string, unknown>, key: string): number {
   const value = record[key];
   if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new Error(`Backup ${key} is invalid.`);
+  }
+  return value;
+}
+
+function readOptionalNumber(record: Record<string, unknown>, key: string): number | undefined {
+  const value = record[key];
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`Backup ${key} is invalid.`);
+  }
+  return value;
+}
+
+function validateEffortValue(value: number): AttemptEffort {
+  if (!Number.isInteger(value) || value < 1 || value > 7) {
+    throw new Error("Attempt effort must be between 1 and 7.");
+  }
+  return value as AttemptEffort;
+}
+
+function validateWallAngleValue(value: number): number {
+  if (!Number.isFinite(value)) {
+    throw new Error("Wall angle is invalid.");
   }
   return value;
 }

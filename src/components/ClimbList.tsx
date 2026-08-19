@@ -1,5 +1,6 @@
 import type { Attempt, Climb, Gym } from "../types/domain";
 import { getAttemptCountsByClimb } from "../utils/attempts";
+import { formatClimbLabel } from "../utils/climbs";
 
 type ClimbListProps = {
   climbs: Climb[];
@@ -34,7 +35,7 @@ export function ClimbList({ climbs, attempts, gyms = [], currentClimbId, onSelec
             >
               <button className="climb-select" onClick={() => onSelect(climb.id)}>
                 <span>
-                  <strong>{climb.grade}</strong>
+                  <strong>{formatClimbLabel(climb)}</strong>
                   {climb.name ? ` ${climb.name}` : ""}
                   {climb.gymId && gymById.get(climb.gymId) ? (
                     <small className="climb-venue">{gymById.get(climb.gymId)?.name}</small>

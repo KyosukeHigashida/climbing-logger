@@ -6,6 +6,7 @@ import { AttemptEditor } from "../components/AttemptEditor";
 import { AttemptTimeline } from "../components/AttemptTimeline";
 import { ClimbForm, type ClimbFormValue } from "../components/ClimbForm";
 import { ClimbList } from "../components/ClimbList";
+import { EffortInput } from "../components/EffortInput";
 import { IntervalTimer } from "../components/IntervalTimer";
 import { SessionTimer } from "../components/SessionTimer";
 import {
@@ -19,9 +20,10 @@ import {
   getSessionAttempts,
   getSessionClimbs,
   updateAttempt,
+  updateAttemptEffort,
   updateClimb,
 } from "../db/repository";
-import type { Attempt, AttemptResult, Climb, Grade, Gym, Session } from "../types/domain";
+import type { Attempt, AttemptEffort, AttemptResult, Climb, Grade, Gym, Session } from "../types/domain";
 import { getAttemptCount } from "../utils/attempts";
 import { currentClimbStorageKey } from "../utils/currentClimb";
 import { getSavedCurrentVenueId, saveCurrentVenueId } from "../utils/currentVenue";
@@ -35,6 +37,8 @@ export function SessionPage() {
   const [editingAttemptId, setEditingAttemptId] = useState<string | null>(null);
   const [currentVenueId, setCurrentVenueId] = useState<string | null>(null);
   const [hasLoadedVenue, setHasLoadedVenue] = useState(false);
+  const [pendingEffortAttemptId, setPendingEffortAttemptId] = useState<string | null>(null);
+  const [pendingEffort, setPendingEffort] = useState<AttemptEffort>(4);
   const [error, setError] = useState<string | null>(null);
 
   const session = useLiveQuery<Session | null>(
@@ -142,7 +146,7 @@ export function SessionPage() {
     if (!sessionId) {
       return;
     }
-    const climb = await createClimb(sessionId, value.grade, value.name, value.gymId, value.gradeId);
+    const climb = await createClimb(sessionId, value.grade, value.name, value.gymId, value.gradeId, value.wallAngle);
     setCurrentClimbId(climb.id);
     setIsAddingClimb(false);
   }
@@ -151,7 +155,7 @@ export function SessionPage() {
     if (!editingClimbId) {
       return;
     }
-    await updateClimb(editingClimbId, value.grade, value.name, value.gymId, value.gradeId);
+    await updateClimb(editingClimbId, value.grade, value.name, value.gymId, value.gradeId, value.wallAngle);
     setEditingClimbId(null);
   }
 
@@ -166,9 +170,24 @@ export function SessionPage() {
     }
     setError(null);
     try {
-      await createAttemptForLoadedSessionClimb(activeSession, currentClimb, result);
+      const attempt = await createAttemptForLoadedSessionClimb(activeSession, currentClimb, result);
+      setPendingEffortAttemptId(attempt.id);
+      setPendingEffort(attempt.effort ?? 4);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save attempt.");
+    }
+  }
+
+  async function handleSavePendingEffort() {
+    if (!pendingEffortAttemptId) {
+      return;
+    }
+    setError(null);
+    try {
+      await updateAttemptEffort(pendingEffortAttemptId, pendingEffort);
+      setPendingEffortAttemptId(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save effort.");
     }
   }
 
@@ -216,7 +235,12 @@ export function SessionPage() {
         <p className="label">Current Climb</p>
         {currentClimb ? (
           <>
-            <div className="grade-display">{currentClimb.grade}</div>
+            <div className="current-grade-line">
+              <span className="grade-display">{currentClimb.grade}</span>
+              {currentClimb.wallAngle !== undefined && (
+                <span className="wall-angle-badge">{currentClimb.wallAngle}°</span>
+              )}
+            </div>
             <div className="climb-name">{currentClimb.name ?? "Unnamed climb"}</div>
             <div className="metrics-grid">
               <div>
@@ -231,6 +255,20 @@ export function SessionPage() {
               </div>
             </div>
             <AttemptButtons onAttempt={handleAttempt} />
+            {pendingEffortAttemptId && attempts.some((attempt) => attempt.id === pendingEffortAttemptId) && (
+              <div className="post-attempt-effort">
+                <div className="section-heading">
+                  <span className="label">Effort</span>
+                  <button className="small-text-action" onClick={() => setPendingEffortAttemptId(null)}>
+                    Skip
+                  </button>
+                </div>
+                <EffortInput value={pendingEffort} onChange={setPendingEffort} />
+                <button className="secondary full" onClick={handleSavePendingEffort}>
+                  Save Effort
+                </button>
+              </div>
+            )}
           </>
         ) : (
           <button className="primary full" onClick={() => setIsAddingClimb(true)}>
@@ -256,6 +294,7 @@ export function SessionPage() {
           initialGrade={editingClimb.grade}
           initialGradeId={editingClimb.gradeId ?? null}
           initialGymId={editingClimb.gymId ?? null}
+          initialWallAngle={editingClimb.wallAngle}
           initialName={editingClimb.name}
           currentVenue={editingVenue}
           grades={editingClimbGrades}

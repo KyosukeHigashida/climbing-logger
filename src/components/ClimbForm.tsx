@@ -6,12 +6,14 @@ export type ClimbFormValue = {
   name: string | null;
   gymId: string | null;
   gradeId: string | null;
+  wallAngle: number | null;
 };
 
 type ClimbFormProps = {
   initialGrade?: string;
   initialGradeId?: string | null;
   initialGymId?: string | null;
+  initialWallAngle?: number;
   initialName?: string | null;
   currentVenue: Gym | null;
   grades: Grade[];
@@ -24,6 +26,7 @@ export function ClimbForm({
   initialGrade = "",
   initialGradeId = null,
   initialGymId = null,
+  initialWallAngle,
   initialName = "",
   currentVenue,
   grades,
@@ -34,6 +37,7 @@ export function ClimbForm({
   const [grade, setGrade] = useState(initialGrade);
   const [gradeId, setGradeId] = useState<string | null>(initialGradeId);
   const [name, setName] = useState(initialName ?? "");
+  const [wallAngle, setWallAngle] = useState(initialWallAngle?.toString() ?? "");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const formGymId = initialGymId ?? currentVenue?.id ?? null;
@@ -50,8 +54,14 @@ export function ClimbForm({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const resolvedGrade = selectedGrade?.label ?? grade.trim();
+    const trimmedWallAngle = wallAngle.trim();
+    const parsedWallAngle = trimmedWallAngle ? Number(trimmedWallAngle) : null;
     if (!resolvedGrade) {
       setError("Grade is required.");
+      return;
+    }
+    if (parsedWallAngle !== null && !Number.isFinite(parsedWallAngle)) {
+      setError("Wall angle must be a number.");
       return;
     }
 
@@ -63,10 +73,12 @@ export function ClimbForm({
         name,
         gymId: formGymId,
         gradeId,
+        wallAngle: parsedWallAngle,
       });
       setGrade("");
       setGradeId(null);
       setName("");
+      setWallAngle("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save climb.");
     } finally {
@@ -106,6 +118,18 @@ export function ClimbForm({
       <label>
         Name / number
         <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Yellow #12" />
+      </label>
+      <label>
+        Wall angle
+        <div className="angle-input-row">
+          <input
+            inputMode="decimal"
+            value={wallAngle}
+            onChange={(event) => setWallAngle(event.target.value)}
+            placeholder="120"
+          />
+          <span>°</span>
+        </div>
       </label>
       {error && <p className="error">{error}</p>}
       <div className="form-actions">

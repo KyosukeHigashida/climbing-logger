@@ -31,12 +31,14 @@ export type Climb = {
   grade: string;
   gymId?: string | null;
   gradeId?: string | null;
+  wallAngle?: number;
   name: string | null;
   createdAt: string;
   updatedAt?: string;
 };
 
 export type AttemptResult = "fail" | "send";
+export type AttemptEffort = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 export type Attempt = {
   id: string;
@@ -47,6 +49,7 @@ export type Attempt = {
    */
   timestamp: string;
   result: AttemptResult;
+  effort?: AttemptEffort;
   createdAt: string;
   updatedAt?: string;
 };
