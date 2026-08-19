@@ -56,6 +56,7 @@ export type Climb = {
   wallBoardId?: string | null;
   wallLabel?: string | null;
   name: string | null;
+  memo?: string | null;
   createdAt: string;
   updatedAt?: string;
 };
@@ -78,6 +79,7 @@ export type Attempt = {
   endedAt: string | null;
   result: AttemptResult | null;
   effort?: AttemptEffort;
+  note?: string | null;
   createdAt: string;
   updatedAt?: string;
 };

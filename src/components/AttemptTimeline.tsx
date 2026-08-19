@@ -85,6 +85,7 @@ export function AttemptTimeline({ attempts, climbs, gyms = [], onEdit }: Attempt
                       {attempt.effort !== undefined && (
                         <div className="timeline-effort">Effort: {effortLabels[attempt.effort]}</div>
                       )}
+                      {attempt.note && <div className="timeline-note">{attempt.note}</div>}
                       {onEdit && (
                         <button className="edit-attempt-button" onClick={() => onEdit(attempt)}>
                           Edit attempt

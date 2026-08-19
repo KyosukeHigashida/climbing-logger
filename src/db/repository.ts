@@ -3,7 +3,7 @@ import type { Attempt, AttemptEffort, AttemptResult, Board, Climb, Grade, Gym, S
 import { generateId } from "../utils/id";
 import { nowIso } from "../utils/time";
 
-const CURRENT_SCHEMA_VERSION = 7;
+const CURRENT_SCHEMA_VERSION = 9;
 
 export type DataExport = {
   schemaVersion: number;
@@ -27,6 +27,11 @@ export type ActiveSessionSnapshot = {
   grades: Grade[];
   wallAngles: WallAngle[];
   currentClimbId: string | null;
+  ui: {
+    currentClimbId: string | null;
+    currentWallType: "gym" | "board";
+    currentBoardId: string | null;
+  };
 };
 
 export type AttemptUpdate = {
@@ -36,6 +41,7 @@ export type AttemptUpdate = {
   timestamp?: string;
   climbId: string;
   effort?: AttemptEffort | null;
+  note?: string | null;
 };
 
 export type ClimbUpdate = {
@@ -48,6 +54,7 @@ export type ClimbUpdate = {
   wallType?: "gym" | "board";
   wallBoardId?: string | null;
   wallLabel?: string | null;
+  memo?: string | null;
 };
 
 export function getAllGyms(): Promise<Gym[]> {
@@ -523,14 +530,20 @@ export async function getActiveSession(): Promise<Session | null> {
   return (await db.sessions.filter((session) => session.endedAt === null).first()) ?? null;
 }
 
-export async function loadCurrentActiveSessionSnapshot(currentClimbId: string | null = null): Promise<ActiveSessionSnapshot | null> {
+export async function loadCurrentActiveSessionSnapshot(
+  currentClimbId: string | null = null,
+  currentWallType: "gym" | "board" = "gym",
+  currentBoardId: string | null = null,
+): Promise<ActiveSessionSnapshot | null> {
   const session = await getActiveSession();
-  return session ? loadActiveSessionSnapshot(session.id, currentClimbId) : null;
+  return session ? loadActiveSessionSnapshot(session.id, currentClimbId, currentWallType, currentBoardId) : null;
 }
 
 export async function loadActiveSessionSnapshot(
   sessionId: string,
   currentClimbId: string | null = null,
+  currentWallType: "gym" | "board" = "gym",
+  currentBoardId: string | null = null,
 ): Promise<ActiveSessionSnapshot | null> {
   const session = await getSession(sessionId);
   if (!session) {
@@ -550,6 +563,10 @@ export async function loadActiveSessionSnapshot(
     currentClimbId && climbs.some((climb) => climb.id === currentClimbId)
       ? currentClimbId
       : [...climbs].reverse()[0]?.id ?? null;
+  const resolvedCurrentWall =
+    currentWallType === "board" && currentBoardId && boards.some((board) => board.id === currentBoardId)
+      ? { currentWallType: "board" as const, currentBoardId }
+      : { currentWallType: "gym" as const, currentBoardId: null };
 
   return {
     session,
@@ -561,6 +578,10 @@ export async function loadActiveSessionSnapshot(
     grades,
     wallAngles,
     currentClimbId: resolvedCurrentClimbId,
+    ui: {
+      currentClimbId: resolvedCurrentClimbId,
+      ...resolvedCurrentWall,
+    },
   };
 }
 
@@ -663,6 +684,7 @@ export async function createClimb(
   wallAnglePresetId: string | null = null,
   wallType: "gym" | "board" = "gym",
   wallBoardId: string | null = null,
+  memo: string | null = null,
 ): Promise<Climb> {
   const session = await db.sessions.get(sessionId);
   if (!session) {
@@ -685,6 +707,7 @@ export async function createClimb(
     wallBoardId: resolvedWall.wallBoardId,
     wallLabel: resolvedWall.wallLabel,
     name: name && name.trim().length > 0 ? name.trim() : null,
+    memo: memo && memo.trim().length > 0 ? memo.trim() : null,
     createdAt: timestamp,
   };
 
@@ -702,7 +725,8 @@ export async function updateClimb(
   wallAnglePresetId?: string | null,
   wallType?: "gym" | "board",
   wallBoardId?: string | null,
-): Promise<void> {
+  memo?: string | null,
+): Promise<Climb> {
   const climb = await db.climbs.get(climbId);
   if (!climb) {
     throw new Error("Climb does not exist.");
@@ -720,19 +744,36 @@ export async function updateClimb(
   });
   const resolvedWallAngle = await validateClimbWallAngle(nextGymId, nextWallAnglePresetId, nextWallAngle);
   const resolvedWall = await validateClimbWall(nextWallType, nextWallBoardId);
-
-  await db.climbs.update(climbId, {
+  const updatedAt = nowIso();
+  const updatedClimb: Climb = {
+    ...climb,
     grade: resolvedGrade,
     gymId: nextGymId,
     gradeId: nextGradeId,
     wallAnglePresetId: nextWallAnglePresetId,
-    wallAngle: resolvedWallAngle === null ? undefined : resolvedWallAngle,
+    ...(resolvedWallAngle === null ? { wallAngle: undefined } : { wallAngle: resolvedWallAngle }),
     wallType: resolvedWall.wallType,
     wallBoardId: resolvedWall.wallBoardId,
     wallLabel: resolvedWall.wallLabel,
     name: name && name.trim().length > 0 ? name.trim() : null,
-    updatedAt: nowIso(),
+    memo: memo === undefined ? climb.memo ?? null : memo && memo.trim().length > 0 ? memo.trim() : null,
+    updatedAt,
+  };
+
+  await db.climbs.update(climbId, {
+    grade: updatedClimb.grade,
+    gymId: updatedClimb.gymId,
+    gradeId: updatedClimb.gradeId,
+    wallAnglePresetId: updatedClimb.wallAnglePresetId,
+    wallAngle: updatedClimb.wallAngle,
+    wallType: updatedClimb.wallType,
+    wallBoardId: updatedClimb.wallBoardId,
+    wallLabel: updatedClimb.wallLabel,
+    name: updatedClimb.name,
+    memo: updatedClimb.memo,
+    updatedAt,
   });
+  return updatedClimb;
 }
 
 export async function createAttempt(
@@ -874,7 +915,7 @@ export async function cancelAttempt(attemptId: string): Promise<void> {
   await db.attempts.delete(attemptId);
 }
 
-export async function updateAttempt(attemptId: string, update: AttemptUpdate): Promise<void> {
+export async function updateAttempt(attemptId: string, update: AttemptUpdate): Promise<Attempt> {
   const attempt = await db.attempts.get(attemptId);
   if (!attempt) {
     throw new Error("Attempt does not exist.");
@@ -931,18 +972,37 @@ export async function updateAttempt(attemptId: string, update: AttemptUpdate): P
     }
   }
 
-  await db.attempts.update(attemptId, {
+  const updatedAt = nowIso();
+  const updatedAttempt: Attempt = {
+    ...attempt,
     climbId: update.climbId,
     result: update.result,
     startedAt,
     endedAt,
     timestamp: endedAt ?? undefined,
     effort: update.effort === null ? undefined : update.effort === undefined ? attempt.effort : validateEffortValue(update.effort),
-    updatedAt: nowIso(),
+    note: update.note === undefined ? attempt.note ?? null : normalizeOptionalText(update.note),
+    updatedAt,
+  };
+
+  await db.attempts.update(attemptId, {
+    climbId: updatedAttempt.climbId,
+    result: updatedAttempt.result,
+    startedAt: updatedAttempt.startedAt,
+    endedAt: updatedAttempt.endedAt,
+    timestamp: updatedAttempt.timestamp,
+    effort: updatedAttempt.effort,
+    note: updatedAttempt.note,
+    updatedAt,
   });
+  return updatedAttempt;
 }
 
-export async function updateAttemptEffort(attemptId: string, effort: AttemptEffort | null): Promise<Attempt> {
+export async function updateAttemptEffort(
+  attemptId: string,
+  effort: AttemptEffort | null,
+  note?: string | null,
+): Promise<Attempt> {
   const attempt = await db.attempts.get(attemptId);
   if (!attempt) {
     throw new Error("Attempt does not exist.");
@@ -950,6 +1010,7 @@ export async function updateAttemptEffort(attemptId: string, effort: AttemptEffo
 
   const update = {
     effort: effort === null ? undefined : validateEffortValue(effort),
+    note: note === undefined ? attempt.note ?? null : normalizeOptionalText(note),
     updatedAt: nowIso(),
   };
   await db.attempts.update(attemptId, update);
@@ -1023,7 +1084,9 @@ export function validateDataExport(data: unknown): DataExport {
     data.schemaVersion !== 4 &&
     data.schemaVersion !== 5 &&
     data.schemaVersion !== 6 &&
-    data.schemaVersion !== 7
+    data.schemaVersion !== 7 &&
+    data.schemaVersion !== 8 &&
+    data.schemaVersion !== 9
   ) {
     throw new Error("Unsupported backup schema version.");
   }
@@ -1040,15 +1103,27 @@ export function validateDataExport(data: unknown): DataExport {
       data.schemaVersion === 4 ||
       data.schemaVersion === 5 ||
       data.schemaVersion === 6 ||
-      data.schemaVersion === 7) &&
+      data.schemaVersion === 7 ||
+      data.schemaVersion === 8 ||
+      data.schemaVersion === 9) &&
     (!Array.isArray(data.gyms) || !Array.isArray(data.grades))
   ) {
     throw new Error("Backup must include gyms and grades arrays.");
   }
-  if ((data.schemaVersion === 5 || data.schemaVersion === 6 || data.schemaVersion === 7) && !Array.isArray(data.wallAngles)) {
+  if (
+    (data.schemaVersion === 5 ||
+      data.schemaVersion === 6 ||
+      data.schemaVersion === 7 ||
+      data.schemaVersion === 8 ||
+      data.schemaVersion === 9) &&
+    !Array.isArray(data.wallAngles)
+  ) {
     throw new Error("Backup must include wallAngles array.");
   }
-  if ((data.schemaVersion === 6 || data.schemaVersion === 7) && !Array.isArray(data.boards)) {
+  if (
+    (data.schemaVersion === 6 || data.schemaVersion === 7 || data.schemaVersion === 8 || data.schemaVersion === 9) &&
+    !Array.isArray(data.boards)
+  ) {
     throw new Error("Backup must include boards array.");
   }
 
@@ -1061,12 +1136,21 @@ export function validateDataExport(data: unknown): DataExport {
     data.schemaVersion === 4 ||
     data.schemaVersion === 5 ||
     data.schemaVersion === 6 ||
-    data.schemaVersion === 7;
+    data.schemaVersion === 7 ||
+    data.schemaVersion === 8 ||
+    data.schemaVersion === 9;
   const gyms: Gym[] = hasGymMaster ? rawGyms.map(validateGym) : [];
-  const boards: Board[] = data.schemaVersion === 6 || data.schemaVersion === 7 ? rawBoards.map(validateBoard) : [];
+  const boards: Board[] =
+    data.schemaVersion === 6 || data.schemaVersion === 7 || data.schemaVersion === 8 || data.schemaVersion === 9
+      ? rawBoards.map(validateBoard)
+      : [];
   const grades: Grade[] = hasGymMaster ? rawGrades.map(validateGrade) : [];
   const wallAngles: WallAngle[] =
-    data.schemaVersion === 5 || data.schemaVersion === 6 || data.schemaVersion === 7
+    data.schemaVersion === 5 ||
+    data.schemaVersion === 6 ||
+    data.schemaVersion === 7 ||
+    data.schemaVersion === 8 ||
+    data.schemaVersion === 9
       ? rawWallAngles.map(validateWallAngle)
       : [];
   const sessions: Session[] = data.sessions.map(validateSession);
@@ -1308,6 +1392,11 @@ function normalizeRequiredText(value: string, message: string): string {
   return normalized;
 }
 
+function normalizeOptionalText(value: string | null): string | null {
+  const normalized = value?.trim() ?? "";
+  return normalized.length > 0 ? normalized : null;
+}
+
 async function reorderGradeRecords(grades: Grade[], orderedGradeIds: string[], ownerError: string): Promise<void> {
   const existingIds = new Set(grades.map((grade) => grade.id));
   if (orderedGradeIds.length !== grades.length || new Set(orderedGradeIds).size !== orderedGradeIds.length) {
@@ -1469,6 +1558,7 @@ function validateClimb(value: unknown): Climb {
     wallBoardId: readOptionalNullableString(value, "wallBoardId"),
     wallLabel: readOptionalNullableString(value, "wallLabel") ?? "Gym Wall",
     name: readNullableString(value, "name"),
+    memo: readOptionalNullableString(value, "memo"),
     createdAt: readIsoString(value, "createdAt"),
   };
   const wallAngle = readOptionalNumber(value, "wallAngle");
@@ -1507,6 +1597,7 @@ function validateAttempt(value: unknown): Attempt {
     startedAt,
     endedAt,
     result,
+    note: readOptionalNullableString(value, "note"),
     createdAt: readIsoString(value, "createdAt"),
   };
   const effort = readOptionalNumber(value, "effort");

@@ -431,7 +431,7 @@ describe("repository", () => {
     const attempts = [];
     for (let effort = 1; effort <= 7; effort += 1) {
       const attempt = await createAttempt(session.id, climb.id, "fail");
-      await updateAttemptEffort(attempt.id, effort as 1 | 2 | 3 | 4 | 5 | 6 | 7);
+      await updateAttemptEffort(attempt.id, effort as 1 | 2 | 3 | 4 | 5 | 6 | 7, `note ${effort}`);
       attempts.push(attempt);
     }
 
@@ -439,10 +439,13 @@ describe("repository", () => {
       "Attempt effort must be between 1 and 7.",
     );
     expect((await db.attempts.get(attempts[0].id))?.effort).toBe(1);
+    expect((await db.attempts.get(attempts[0].id))?.note).toBe("note 1");
     expect((await db.attempts.get(attempts[6].id))?.effort).toBe(7);
 
-    await updateAttemptEffort(attempts[0].id, null);
-    expect((await db.attempts.get(attempts[0].id))?.effort).toBeUndefined();
+    await updateAttemptEffort(attempts[0].id, null, null);
+    const clearedAttempt = await db.attempts.get(attempts[0].id);
+    expect(clearedAttempt?.effort).toBeUndefined();
+    expect(clearedAttempt?.note).toBeNull();
 
     const unsetAttempt = await createAttempt(session.id, climb.id, "send");
     expect(unsetAttempt.effort).toBeUndefined();
@@ -491,7 +494,12 @@ describe("repository", () => {
         climbId: activeClimb.id,
         timestamp: "2026-08-17T09:05:00.000Z",
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual(
+      expect.objectContaining({
+        id: activeAttempt.id,
+        endedAt: "2026-08-17T09:05:00.000Z",
+      }),
+    );
 
     await expect(
       updateAttempt(activeAttempt.id, {
@@ -572,7 +580,13 @@ describe("repository", () => {
         climbId: "overnight-climb",
         timestamp: "2026-08-18T00:20:00.000Z",
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual(
+      expect.objectContaining({
+        id: "overnight-attempt",
+        result: "send",
+        endedAt: "2026-08-18T00:20:00.000Z",
+      }),
+    );
   });
 
   it("keeps createdAt stable and writes updatedAt when an attempt is edited", async () => {
@@ -611,20 +625,25 @@ describe("repository", () => {
 
   it("stores optional wall angle and updates it when a climb is edited", async () => {
     const session = await createSession();
-    const climb = await createClimb(session.id, "2Q", "A", null, null, 120);
+    const climb = await createClimb(session.id, "2Q", "A", null, null, 120, null, "gym", null, "Right hand crux");
     const noAngleClimb = await createClimb(session.id, "3Q", "B");
 
     expect((await db.climbs.get(climb.id))?.wallAngle).toBe(120);
+    expect((await db.climbs.get(climb.id))?.memo).toBe("Right hand crux");
     expect((await db.climbs.get(noAngleClimb.id))?.wallAngle).toBeUndefined();
+    expect((await db.climbs.get(noAngleClimb.id))?.memo).toBeNull();
 
-    await updateClimb(climb.id, "2Q", "Renamed", null, null, 110);
+    await updateClimb(climb.id, "2Q", "Renamed", null, null, 110, null, "gym", null, "Use left foot");
     expect(await db.climbs.get(climb.id)).toMatchObject({
       name: "Renamed",
       wallAngle: 110,
+      memo: "Use left foot",
     });
 
-    await updateClimb(climb.id, "2Q", "Flat", null, null, null);
-    expect((await db.climbs.get(climb.id))?.wallAngle).toBeUndefined();
+    await updateClimb(climb.id, "2Q", "Flat", null, null, null, null, "gym", null, null);
+    const cleared = await db.climbs.get(climb.id);
+    expect(cleared?.wallAngle).toBeUndefined();
+    expect(cleared?.memo).toBeNull();
   });
 
   it("deletes only the target attempt and derived values recalculate from remaining raw attempts", async () => {
@@ -761,7 +780,7 @@ describe("repository", () => {
   it("exports complete raw data including attempt timestamps and audit fields", async () => {
     setNow("2026-08-17T09:00:00.000Z");
     const session = await createSession();
-    const climb = await createClimb(session.id, "2Q", "A", null, null, 120);
+    const climb = await createClimb(session.id, "2Q", "A", null, null, 120, null, "gym", null, "Hold right shoulder low");
     const attempt = await createAttempt(session.id, climb.id, "fail");
 
     setNow("2026-08-17T09:01:00.000Z");
@@ -770,13 +789,14 @@ describe("repository", () => {
       climbId: climb.id,
       timestamp: "2026-08-17T09:00:30.000Z",
       effort: 6,
+      note: "Right foot slipped",
     });
 
     const exported = await exportAllData();
     const exportedClimb = exported.climbs.find((item) => item.id === climb.id);
     const exportedAttempt = exported.attempts.find((item) => item.id === attempt.id);
 
-    expect(exported.schemaVersion).toBe(7);
+    expect(exported.schemaVersion).toBe(9);
     expect(exported.exportedAt).toBe("2026-08-17T09:01:00.000Z");
     expect(exported.gyms).toHaveLength(0);
     expect(exported.boards).toHaveLength(0);
@@ -786,12 +806,14 @@ describe("repository", () => {
     expect(exported.climbs).toHaveLength(1);
     expect(exported.attempts).toHaveLength(1);
     expect(exportedClimb?.wallAngle).toBe(120);
+    expect(exportedClimb?.memo).toBe("Hold right shoulder low");
     expect(exportedAttempt).toMatchObject({
       sessionId: session.id,
       climbId: climb.id,
       result: "send",
       timestamp: "2026-08-17T09:00:30.000Z",
       effort: 6,
+      note: "Right foot slipped",
       createdAt: "2026-08-17T09:00:00.000Z",
       updatedAt: "2026-08-17T09:01:00.000Z",
     });
@@ -952,7 +974,7 @@ describe("repository", () => {
       attempts: [],
     });
 
-    expect(legacy.schemaVersion).toBe(7);
+    expect(legacy.schemaVersion).toBe(9);
     expect(legacy.gyms).toEqual([]);
     expect(legacy.boards).toEqual([]);
     expect(legacy.grades).toEqual([]);

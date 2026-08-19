@@ -4,17 +4,24 @@ import {
   loadCurrentActiveSessionSnapshot,
   type ActiveSessionSnapshot,
 } from "../db/repository";
-import type { Attempt, Climb } from "../types/domain";
+import type { Attempt, Climb, WallAngle } from "../types/domain";
+import type { SavedWallSelection } from "../utils/currentClimb";
 
 type ActiveSessionContextValue = {
   snapshot: ActiveSessionSnapshot | null;
   isHydrating: boolean;
   refreshCurrentActiveSession: () => Promise<ActiveSessionSnapshot | null>;
-  refreshSession: (sessionId: string, currentClimbId?: string | null) => Promise<ActiveSessionSnapshot | null>;
+  refreshSession: (
+    sessionId: string,
+    currentClimbId?: string | null,
+    wallSelection?: SavedWallSelection | null,
+  ) => Promise<ActiveSessionSnapshot | null>;
   clearSnapshot: () => void;
   setCurrentClimbId: (currentClimbId: string | null) => void;
+  setCurrentWallSelection: (wallSelection: SavedWallSelection) => void;
   upsertClimb: (climb: Climb) => void;
   upsertAttempt: (attempt: Attempt) => void;
+  upsertWallAngle: (wallAngle: WallAngle) => void;
   removeAttempt: (attemptId: string) => void;
 };
 
@@ -25,16 +32,28 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
   const [isHydrating, setIsHydrating] = useState(true);
 
   const refreshCurrentActiveSession = useCallback(async () => {
-    const nextSnapshot = await loadCurrentActiveSessionSnapshot(snapshot?.currentClimbId ?? null);
+    const nextSnapshot = await loadCurrentActiveSessionSnapshot(
+      snapshot?.ui.currentClimbId ?? null,
+      snapshot?.ui.currentWallType ?? "gym",
+      snapshot?.ui.currentBoardId ?? null,
+    );
     setSnapshot(nextSnapshot);
     return nextSnapshot;
-  }, [snapshot?.currentClimbId]);
+  }, [snapshot?.ui.currentBoardId, snapshot?.ui.currentClimbId, snapshot?.ui.currentWallType]);
 
-  const refreshSession = useCallback(async (sessionId: string, currentClimbId: string | null = null) => {
-    const nextSnapshot = await loadActiveSessionSnapshot(sessionId, currentClimbId);
-    setSnapshot(nextSnapshot);
-    return nextSnapshot;
-  }, []);
+  const refreshSession = useCallback(
+    async (sessionId: string, currentClimbId: string | null = null, wallSelection: SavedWallSelection | null = null) => {
+      const nextSnapshot = await loadActiveSessionSnapshot(
+        sessionId,
+        currentClimbId,
+        wallSelection?.wallType ?? snapshot?.ui.currentWallType ?? "gym",
+        wallSelection?.wallBoardId ?? snapshot?.ui.currentBoardId ?? null,
+      );
+      setSnapshot(nextSnapshot);
+      return nextSnapshot;
+    },
+    [snapshot?.ui.currentBoardId, snapshot?.ui.currentWallType],
+  );
 
   const clearSnapshot = useCallback(() => {
     setSnapshot(null);
@@ -45,7 +64,26 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
       if (!current || current.currentClimbId === currentClimbId) {
         return current;
       }
-      return { ...current, currentClimbId };
+      return { ...current, currentClimbId, ui: { ...current.ui, currentClimbId } };
+    });
+  }, []);
+
+  const setCurrentWallSelection = useCallback((wallSelection: SavedWallSelection) => {
+    setSnapshot((current) => {
+      if (
+        !current ||
+        (current.ui.currentWallType === wallSelection.wallType && current.ui.currentBoardId === wallSelection.wallBoardId)
+      ) {
+        return current;
+      }
+      return {
+        ...current,
+        ui: {
+          ...current.ui,
+          currentWallType: wallSelection.wallType,
+          currentBoardId: wallSelection.wallType === "board" ? wallSelection.wallBoardId : null,
+        },
+      };
     });
   }, []);
 
@@ -57,7 +95,7 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
       const climbs = current.climbs.some((item) => item.id === climb.id)
         ? current.climbs.map((item) => (item.id === climb.id ? climb : item))
         : [...current.climbs, climb];
-      return { ...current, climbs, currentClimbId: climb.id };
+      return { ...current, climbs, currentClimbId: climb.id, ui: { ...current.ui, currentClimbId: climb.id } };
     });
   }, []);
 
@@ -75,6 +113,18 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
 
   const removeAttempt = useCallback((attemptId: string) => {
     setSnapshot((current) => (current ? { ...current, attempts: current.attempts.filter((attempt) => attempt.id !== attemptId) } : current));
+  }, []);
+
+  const upsertWallAngle = useCallback((wallAngle: WallAngle) => {
+    setSnapshot((current) => {
+      if (!current) {
+        return current;
+      }
+      const wallAngles = current.wallAngles.some((item) => item.id === wallAngle.id)
+        ? current.wallAngles.map((item) => (item.id === wallAngle.id ? wallAngle : item))
+        : [...current.wallAngles, wallAngle];
+      return { ...current, wallAngles };
+    });
   }, []);
 
   useEffect(() => {
@@ -106,8 +156,10 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
       refreshSession,
       clearSnapshot,
       setCurrentClimbId,
+      setCurrentWallSelection,
       upsertClimb,
       upsertAttempt,
+      upsertWallAngle,
       removeAttempt,
     }),
     [
@@ -117,9 +169,11 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
       refreshSession,
       removeAttempt,
       setCurrentClimbId,
+      setCurrentWallSelection,
       snapshot,
       upsertAttempt,
       upsertClimb,
+      upsertWallAngle,
     ],
   );
 

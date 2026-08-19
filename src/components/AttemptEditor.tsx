@@ -21,8 +21,9 @@ type AttemptEditorProps = {
       endedAt: string | null;
       climbId: string;
       effort?: AttemptEffort | null;
+      note?: string | null;
     },
-  ) => Promise<void>;
+  ) => Promise<unknown>;
 };
 
 export function AttemptEditor({
@@ -43,6 +44,7 @@ export function AttemptEditor({
   const [climbId, setClimbId] = useState(attempt.climbId);
   const [effort, setEffort] = useState<AttemptEffort>(attempt.effort ?? 4);
   const [hasEffort, setHasEffort] = useState(attempt.effort !== undefined);
+  const [note, setNote] = useState(attempt.note ?? "");
   const gymById = new Map(gyms.map((gym) => [gym.id, gym]));
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,6 +61,7 @@ export function AttemptEditor({
         endedAt: endedAt ? fromDateTimeLocalValue(endedAt) : null,
         climbId,
         effort: hasEffort ? effort : null,
+        note,
       });
       onCancel();
     } catch (err) {
@@ -146,6 +149,14 @@ export function AttemptEditor({
           </button>
         </div>
         {hasEffort ? <EffortInput value={effort} onChange={setEffort} /> : <p className="muted">No effort set.</p>}
+        <label className="attempt-note-field">
+          Memo
+          <textarea
+            value={note}
+            placeholder="Slip, beta, why it failed..."
+            onChange={(event) => setNote(event.target.value)}
+          />
+        </label>
       </div>
       {error && <p className="error">{error}</p>}
       <div className="form-actions attempt-editor-actions">

@@ -317,6 +317,38 @@ h2 {
   min-height: 76px;
 }
 
+.climb-memo-field {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.climb-memo-field textarea {
+  min-height: 86px;
+  max-height: 86px;
+  resize: none;
+  overflow-y: auto;
+  line-height: 1.35;
+}
+
+.attempt-note-field {
+  display: grid;
+  gap: 6px;
+}
+
+.attempt-note-field textarea {
+  min-height: 58px;
+  max-height: 58px;
+  resize: none;
+  overflow-y: auto;
+  line-height: 1.35;
+}
+
+.new-climb-hint {
+  margin: 0;
+  text-align: right;
+}
+
 .current-grade-line {
   display: flex;
   flex-wrap: wrap;
@@ -371,6 +403,13 @@ h2 {
   margin-top: 8px;
   font-size: 1.5rem;
   font-variant-numeric: tabular-nums;
+}
+
+.reopen-session-button {
+  margin-top: 10px;
+  border: 0;
+  background: #d7f45f;
+  color: #15180e;
 }
 
 .attempt-buttons {
@@ -547,7 +586,9 @@ h2 {
 .inline-form input,
 .grade-row input,
 .attempt-editor input,
-.attempt-editor select {
+.attempt-editor select,
+.attempt-editor textarea,
+.attempt-note-field textarea {
   width: 100%;
   min-width: 0;
   min-height: 52px;
@@ -993,6 +1034,20 @@ h2 {
   background: rgba(255, 255, 255, 0.045);
   color: #dbe3d6;
   font-size: 0.95rem;
+}
+
+.attempt-note-field textarea {
+  min-height: 58px;
+  max-height: 58px;
+  padding: 10px 12px;
+}
+
+.timeline-note {
+  margin-top: 6px;
+  color: #dbe3d6;
+  font-size: 0.88rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
 }
 
 .attempt-editor {

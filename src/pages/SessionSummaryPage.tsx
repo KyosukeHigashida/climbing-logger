@@ -103,8 +103,8 @@ export function SessionSummaryPage() {
         </div>
       </section>
 
-      <button className="secondary full" onClick={handleReopenSession}>
-        Reopen Session
+      <button className="secondary full reopen-session-button" onClick={handleReopenSession}>
+        REOPEN SESSION
       </button>
 
       {editingAttempt && (

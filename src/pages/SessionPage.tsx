@@ -17,11 +17,17 @@ import {
   finishAttempt,
   startAttempt,
   updateAttempt,
+  updateClimb,
   updateAttemptEffort,
 } from "../db/repository";
 import type { Attempt, AttemptEffort, AttemptResult, Board, Climb, Grade, Gym, Session, WallAngle } from "../types/domain";
 import { getAttemptCount, getAttemptEndTime, isActiveAttempt, sortAttemptsByTimestamp } from "../utils/attempts";
-import { currentClimbStorageKey } from "../utils/currentClimb";
+import {
+  getSavedCurrentClimbId,
+  getSavedCurrentWallSelection,
+  saveCurrentClimbId,
+  saveCurrentWallSelection,
+} from "../utils/currentClimb";
 import { getReusableWallAnglePreset } from "../utils/wallAngles";
 
 type WallSelection = {
@@ -38,6 +44,7 @@ type ClimbDraft = {
   wallType: "gym" | "board";
   wallBoardId: string | null;
   wallLabel: string | null;
+  memo: string;
 };
 
 export function SessionPage() {
@@ -50,18 +57,20 @@ export function SessionPage() {
     refreshSession,
     clearSnapshot,
     setCurrentClimbId: setStoreCurrentClimbId,
+    setCurrentWallSelection: setStoreCurrentWallSelection,
     upsertClimb,
     upsertAttempt,
+    upsertWallAngle,
     removeAttempt,
   } = activeSessionStore;
   const snapshot = storedSnapshot?.session.id === sessionId ? storedSnapshot : null;
   const [isLoadingSnapshot, setIsLoadingSnapshot] = useState(false);
+  const [restoredUiSessionId, setRestoredUiSessionId] = useState<string | null>(null);
   const isColdLoading = !snapshot && (isHydrating || isLoadingSnapshot);
-  const [currentClimbId, setCurrentClimbId] = useState<string | null>(null);
   const [editingAttemptId, setEditingAttemptId] = useState<string | null>(null);
-  const [wallSelection, setWallSelection] = useState<WallSelection>({ wallType: "gym", wallBoardId: null });
   const [pendingEffortAttemptId, setPendingEffortAttemptId] = useState<string | null>(null);
   const [pendingEffort, setPendingEffort] = useState<AttemptEffort>(4);
+  const [pendingAttemptNote, setPendingAttemptNote] = useState("");
   const [skipEffort, setSkipEffort] = useState(false);
   const [finishingAttemptId, setFinishingAttemptId] = useState<string | null>(null);
   const [climbDraft, setClimbDraft] = useState<ClimbDraft | null>(null);
@@ -74,6 +83,14 @@ export function SessionPage() {
   const boards = snapshot?.boards ?? [];
   const grades = snapshot?.grades ?? [];
   const wallAngles = snapshot?.wallAngles ?? [];
+  const currentClimbId = snapshot?.ui.currentClimbId ?? snapshot?.currentClimbId ?? null;
+  const wallSelection: WallSelection = useMemo(
+    () => ({
+      wallType: snapshot?.ui.currentWallType ?? "gym",
+      wallBoardId: snapshot?.ui.currentWallType === "board" ? snapshot.ui.currentBoardId : null,
+    }),
+    [snapshot?.ui.currentBoardId, snapshot?.ui.currentWallType],
+  );
 
   const orderedClimbs = useMemo(() => [...climbs].reverse(), [climbs]);
 
@@ -82,9 +99,10 @@ export function SessionPage() {
       return;
     }
     let isMounted = true;
-    const storedClimbId = localStorage.getItem(currentClimbStorageKey(sessionId));
+    const storedClimbId = getSavedCurrentClimbId(sessionId);
+    const storedWallSelection = getSavedCurrentWallSelection(sessionId);
     setIsLoadingSnapshot(true);
-    void refreshSession(sessionId, storedClimbId).finally(() => {
+    void refreshSession(sessionId, storedClimbId, storedWallSelection).finally(() => {
       if (isMounted) {
         setIsLoadingSnapshot(false);
       }
@@ -95,40 +113,113 @@ export function SessionPage() {
   }, [isHydrating, refreshSession, sessionId, snapshot]);
 
   useEffect(() => {
-    if (sessionId && !currentClimbId) {
-      const storedClimbId = localStorage.getItem(currentClimbStorageKey(sessionId));
-      if (storedClimbId && orderedClimbs.some((climb) => climb.id === storedClimbId)) {
-        setCurrentClimbId(storedClimbId);
-        return;
-      }
+    if (!sessionId || !snapshot || restoredUiSessionId === sessionId) {
+      return;
+    }
+    const storedClimbId = getSavedCurrentClimbId(sessionId);
+    if (storedClimbId && orderedClimbs.some((climb) => climb.id === storedClimbId)) {
+      setStoreCurrentClimbId(storedClimbId);
+    }
+    const storedWallSelection = getSavedCurrentWallSelection(sessionId);
+    if (storedWallSelection) {
+      setStoreCurrentWallSelection(storedWallSelection);
+    }
+    setRestoredUiSessionId(sessionId);
+  }, [
+    orderedClimbs,
+    restoredUiSessionId,
+    sessionId,
+    setStoreCurrentClimbId,
+    setStoreCurrentWallSelection,
+    snapshot,
+  ]);
+
+  useEffect(() => {
+    if (!snapshot) {
+      return;
+    }
+    const storedClimbId = sessionId ? getSavedCurrentClimbId(sessionId) : null;
+    if (!currentClimbId && storedClimbId && orderedClimbs.some((climb) => climb.id === storedClimbId)) {
+      setStoreCurrentClimbId(storedClimbId);
+      return;
     }
     if (!currentClimbId && orderedClimbs.length > 0) {
-      setCurrentClimbId(orderedClimbs[0].id);
+      setStoreCurrentClimbId(orderedClimbs[0].id);
     }
     if (currentClimbId && orderedClimbs.length > 0 && !orderedClimbs.some((climb) => climb.id === currentClimbId)) {
-      setCurrentClimbId(orderedClimbs[0].id);
+      setStoreCurrentClimbId(orderedClimbs[0].id);
     }
-  }, [currentClimbId, orderedClimbs, sessionId]);
+  }, [currentClimbId, orderedClimbs, sessionId, setStoreCurrentClimbId, snapshot]);
 
   useEffect(() => {
     if (sessionId && currentClimbId) {
-      localStorage.setItem(currentClimbStorageKey(sessionId), currentClimbId);
-      setStoreCurrentClimbId(currentClimbId);
+      saveCurrentClimbId(sessionId, currentClimbId);
     }
-  }, [currentClimbId, sessionId, setStoreCurrentClimbId]);
+  }, [currentClimbId, sessionId]);
+
+  useEffect(() => {
+    if (sessionId) {
+      saveCurrentWallSelection(sessionId, wallSelection);
+    }
+  }, [sessionId, wallSelection]);
 
   useEffect(() => {
     const active = attempts.find(isActiveAttempt);
     if (active && currentClimbId !== active.climbId) {
-      setCurrentClimbId(active.climbId);
+      setStoreCurrentClimbId(active.climbId);
     }
-  }, [attempts, currentClimbId]);
+  }, [attempts, currentClimbId, setStoreCurrentClimbId]);
 
   const selectedClimbForDraft = (climbs ?? []).find((climb) => climb.id === currentClimbId) ?? null;
 
   useEffect(() => {
     setClimbDraft(selectedClimbForDraft ? createClimbDraft(selectedClimbForDraft) : null);
   }, [selectedClimbForDraft?.id]);
+
+  const currentClimb = climbs.find((climb) => climb.id === currentClimbId) ?? null;
+  const currentClimbAttemptCount = currentClimb ? getAttemptCount(attempts, currentClimb.id) : 0;
+  const shouldStartNewClimb =
+    Boolean(currentClimb && climbDraft && currentClimbAttemptCount > 0 && isClimbIdentityDraftDirty(currentClimb, climbDraft));
+
+  useEffect(() => {
+    if (!currentClimb || !climbDraft) {
+      return;
+    }
+    const identityDirty = isClimbIdentityDraftDirty(currentClimb, climbDraft);
+    const memoDirty = isClimbMemoDraftDirty(currentClimb, climbDraft);
+    if (!identityDirty && !memoDirty) {
+      return;
+    }
+    if (currentClimbAttemptCount > 0 && !memoDirty) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      const updateSource = currentClimbAttemptCount === 0 ? climbDraft : createClimbDraft(currentClimb);
+      void updateClimb(
+        currentClimb.id,
+        updateSource.grade.trim() || "Ungraded",
+        normalizeDraftName(updateSource.name),
+        session?.initialGymId ?? null,
+        updateSource.gradeId,
+        updateSource.wallAngle,
+        updateSource.wallAnglePresetId,
+        updateSource.wallType,
+        updateSource.wallBoardId,
+        normalizeDraftMemo(climbDraft.memo),
+      )
+        .then(upsertClimb)
+        .catch((err) => {
+          setError(err instanceof Error ? err.message : "Could not update climb.");
+        });
+    }, 250);
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    climbDraft,
+    currentClimb,
+    currentClimbAttemptCount,
+    session?.initialGymId,
+    upsertClimb,
+  ]);
 
   if (!session && isColdLoading) {
     return <main className="app-shell loading">Loading session...</main>;
@@ -160,7 +251,6 @@ export function SessionPage() {
   const venueWallAngles = wallAngles
     .filter((wallAngle) => wallAngle.gymId === (activeSession.initialGymId ?? null))
     .sort((a, b) => a.order - b.order);
-  const currentClimb = climbs.find((climb) => climb.id === currentClimbId) ?? null;
   const activeAttempt = attempts.find(isActiveAttempt) ?? null;
   const currentClimbActiveAttempt = activeAttempt && currentClimb?.id === activeAttempt.climbId ? activeAttempt : null;
   const pendingEffortAttempt = pendingEffortAttemptId
@@ -229,9 +319,9 @@ export function SessionPage() {
         wallAnglePresetId,
         sourceWallType,
         sourceWallBoardId,
+        null,
       );
-      setWallSelection({ wallType: sourceWallType, wallBoardId: sourceWallBoardId });
-      setCurrentClimbId(climb.id);
+      setStoreCurrentWallSelection({ wallType: sourceWallType, wallBoardId: sourceWallBoardId });
       upsertClimb(climb);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add climb.");
@@ -244,7 +334,6 @@ export function SessionPage() {
       return;
     }
     setError(null);
-    setCurrentClimbId(climbId);
     setStoreCurrentClimbId(climbId);
   }
 
@@ -255,21 +344,37 @@ export function SessionPage() {
     setError(null);
     try {
       let targetClimbId = currentClimb.id;
-      if (isClimbDraftDirty(currentClimb, climbDraft)) {
-        const nextClimb = await createClimb(
-          sessionId,
-          climbDraft.grade.trim() || "Ungraded",
-          normalizeDraftName(climbDraft.name),
-          activeSession.initialGymId ?? null,
-          climbDraft.gradeId,
-          climbDraft.wallAngle,
-          climbDraft.wallAnglePresetId,
-          climbDraft.wallType,
-          climbDraft.wallBoardId,
-        );
-        targetClimbId = nextClimb.id;
-        setCurrentClimbId(nextClimb.id);
-        upsertClimb(nextClimb);
+      if (isClimbIdentityDraftDirty(currentClimb, climbDraft)) {
+        if (currentClimbAttemptCount === 0) {
+          const updatedClimb = await updateClimb(
+            currentClimb.id,
+            climbDraft.grade.trim() || "Ungraded",
+            normalizeDraftName(climbDraft.name),
+            activeSession.initialGymId ?? null,
+            climbDraft.gradeId,
+            climbDraft.wallAngle,
+            climbDraft.wallAnglePresetId,
+            climbDraft.wallType,
+            climbDraft.wallBoardId,
+            normalizeDraftMemo(climbDraft.memo),
+          );
+          upsertClimb(updatedClimb);
+        } else {
+          const nextClimb = await createClimb(
+            sessionId,
+            climbDraft.grade.trim() || "Ungraded",
+            normalizeDraftName(climbDraft.name),
+            activeSession.initialGymId ?? null,
+            climbDraft.gradeId,
+            climbDraft.wallAngle,
+            climbDraft.wallAnglePresetId,
+            climbDraft.wallType,
+            climbDraft.wallBoardId,
+            normalizeDraftMemo(climbDraft.memo),
+          );
+          targetClimbId = nextClimb.id;
+          upsertClimb(nextClimb);
+        }
       }
       const attempt = await startAttempt(sessionId, targetClimbId);
       upsertAttempt(attempt);
@@ -287,6 +392,7 @@ export function SessionPage() {
     setFinishingAttemptId(currentClimbActiveAttempt.id);
     setPendingEffortAttemptId(currentClimbActiveAttempt.id);
     setPendingEffort(currentClimbActiveAttempt.effort ?? 4);
+    setPendingAttemptNote(currentClimbActiveAttempt.note ?? "");
     try {
       const attempt = await finishAttempt(currentClimbActiveAttempt.id, result);
       upsertAttempt(attempt);
@@ -294,6 +400,7 @@ export function SessionPage() {
     } catch (err) {
       setFinishingAttemptId(null);
       setPendingEffortAttemptId(null);
+      setPendingAttemptNote("");
       setError(err instanceof Error ? err.message : "Could not finish attempt.");
     }
   }
@@ -317,9 +424,10 @@ export function SessionPage() {
     }
     setError(null);
     try {
-      const attempt = await updateAttemptEffort(pendingEffortAttemptId, skipEffort ? null : pendingEffort);
+      const attempt = await updateAttemptEffort(pendingEffortAttemptId, skipEffort ? null : pendingEffort, pendingAttemptNote);
       upsertAttempt(attempt);
       setPendingEffortAttemptId(null);
+      setPendingAttemptNote("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save effort.");
     }
@@ -327,12 +435,12 @@ export function SessionPage() {
 
   async function handleDeleteAttempt(attemptId: string) {
     await deleteAttempt(attemptId);
-    await refreshSession(activeSession.id, currentClimbId);
+    removeAttempt(attemptId);
   }
 
   async function handleSaveAttempt(attemptId: string, update: Parameters<typeof updateAttempt>[1]) {
-    await updateAttempt(attemptId, update);
-    await refreshSession(activeSession.id, currentClimbId);
+    const attempt = await updateAttempt(attemptId, update);
+    upsertAttempt(attempt);
   }
 
   async function handleEndSession() {
@@ -376,10 +484,10 @@ export function SessionPage() {
             value={wallSelection.wallType === "gym" ? "gym" : `board:${wallSelection.wallBoardId}`}
             onChange={(event) => {
               if (event.target.value === "gym") {
-                setWallSelection({ wallType: "gym", wallBoardId: null });
+                setStoreCurrentWallSelection({ wallType: "gym", wallBoardId: null });
                 return;
               }
-              setWallSelection({ wallType: "board", wallBoardId: event.target.value.replace("board:", "") });
+              setStoreCurrentWallSelection({ wallType: "board", wallBoardId: event.target.value.replace("board:", "") });
             }}
           >
             <option value="gym">Gym Wall</option>
@@ -396,6 +504,7 @@ export function SessionPage() {
       <section className="panel current-climb">
         <div className="section-heading">
           <p className="label">Current Climb</p>
+          {shouldStartNewClimb && <p className="muted compact new-climb-hint">Changes will start a new climb.</p>}
         </div>
         {currentClimb ? (
           <div className="current-climb-card">
@@ -409,7 +518,7 @@ export function SessionPage() {
                   wallAngles={currentClimbWallAngles}
                   boards={boards}
                   onDraftChange={(update) => setClimbDraft((current) => (current ? { ...current, ...update } : current))}
-                  onSnapshotRefresh={() => refreshSession(activeSession.id, currentClimbId)}
+                  onWallAngleChange={upsertWallAngle}
                   onError={setError}
                 />
               )}
@@ -431,6 +540,16 @@ export function SessionPage() {
               </div>
             </div>
             <div className="climb-action-card climb-bottom-action">
+              {climbDraft && (
+                <label className="climb-memo-field">
+                  Memo
+                  <textarea
+                    value={climbDraft.memo}
+                    placeholder="Beta, crux, footholds..."
+                    onChange={(event) => setClimbDraft((current) => (current ? { ...current, memo: event.target.value } : current))}
+                  />
+                </label>
+              )}
               {pendingEffortAttempt ? (
                 <div className="post-attempt-effort">
                   <div className="section-heading">
@@ -449,6 +568,14 @@ export function SessionPage() {
                   ) : (
                     <EffortInput value={pendingEffort} onChange={setPendingEffort} />
                   )}
+                  <label className="attempt-note-field">
+                    Memo
+                    <textarea
+                      value={pendingAttemptNote}
+                      placeholder="Slip, beta, why it failed..."
+                      onChange={(event) => setPendingAttemptNote(event.target.value)}
+                    />
+                  </label>
                   <button className="secondary full" disabled={Boolean(finishingAttemptId)} onClick={handleSavePendingEffort}>
                     Save
                   </button>
@@ -466,9 +593,11 @@ export function SessionPage() {
                   </button>
                 </div>
               ) : (
-                <button className="primary climb-start-button" disabled={Boolean(activeAttempt)} onClick={handleStartAttempt}>
-                  START
-                </button>
+                <>
+                  <button className="primary climb-start-button" disabled={Boolean(activeAttempt)} onClick={handleStartAttempt}>
+                    START
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -520,7 +649,7 @@ function EditableClimbCard({
   wallAngles,
   boards,
   onDraftChange,
-  onSnapshotRefresh,
+  onWallAngleChange,
   onError,
 }: {
   climb: Climb;
@@ -530,7 +659,7 @@ function EditableClimbCard({
   wallAngles: WallAngle[];
   boards: Board[];
   onDraftChange: (update: Partial<ClimbDraft>) => void;
-  onSnapshotRefresh: () => Promise<unknown>;
+  onWallAngleChange: (wallAngle: WallAngle) => void;
   onError: (message: string | null) => void;
 }) {
   const [newWallAngle, setNewWallAngle] = useState("");
@@ -670,7 +799,7 @@ function EditableClimbCard({
                 wallAnglePresetId: createdAngle.id,
                 wallAngle: createdAngle.angle,
               });
-              await onSnapshotRefresh();
+              onWallAngleChange(createdAngle);
               setNewWallAngle("");
               setIsAddingWallAngle(false);
               onError(null);
@@ -715,6 +844,7 @@ function createClimbDraft(climb: Climb): ClimbDraft {
     wallType: climb.wallType ?? "gym",
     wallBoardId: climb.wallBoardId ?? null,
     wallLabel: climb.wallLabel ?? null,
+    memo: climb.memo ?? "",
   };
 }
 
@@ -722,7 +852,11 @@ function normalizeDraftName(name: string): string | null {
   return name.trim() || null;
 }
 
-function isClimbDraftDirty(climb: Climb, draft: ClimbDraft): boolean {
+function normalizeDraftMemo(memo: string): string | null {
+  return memo.trim() || null;
+}
+
+function isClimbIdentityDraftDirty(climb: Climb, draft: ClimbDraft): boolean {
   return (
     climb.grade !== draft.grade ||
     (climb.gradeId ?? null) !== draft.gradeId ||
@@ -733,6 +867,10 @@ function isClimbDraftDirty(climb: Climb, draft: ClimbDraft): boolean {
     (climb.wallBoardId ?? null) !== draft.wallBoardId ||
     (climb.wallLabel ?? null) !== draft.wallLabel
   );
+}
+
+function isClimbMemoDraftDirty(climb: Climb, draft: ClimbDraft): boolean {
+  return (climb.memo ?? null) !== normalizeDraftMemo(draft.memo);
 }
 
 function NavigateToSummary({ sessionId }: { sessionId: string }) {
