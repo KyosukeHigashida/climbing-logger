@@ -7,6 +7,8 @@ type EffortInputProps = {
 };
 
 export function EffortInput({ value, onChange }: EffortInputProps) {
+  const pointerPosition = `${((value - 1) / 6) * 100}%`;
+
   return (
     <div className="effort-input">
       <div className="effort-value">{effortLabels[value]}</div>
@@ -19,11 +21,14 @@ export function EffortInput({ value, onChange }: EffortInputProps) {
         onChange={(event) => onChange(toAttemptEffort(Number(event.target.value)))}
         aria-label="Attempt effort"
       />
-      <div className="effort-scale" aria-hidden="true">
-        <span>Easy</span>
-        <span>Moderate</span>
-        <span>Hard</span>
-        <span>Extreme</span>
+      <div className="effort-scale-wrap" aria-hidden="true">
+        <span className="effort-pointer" style={{ left: pointerPosition }} />
+        <div className="effort-scale">
+          <span>Easy</span>
+          <span>Moderate</span>
+          <span>Hard</span>
+          <span>Extreme</span>
+        </div>
       </div>
     </div>
   );
