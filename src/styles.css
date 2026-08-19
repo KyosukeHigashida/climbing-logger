@@ -294,6 +294,7 @@ h2 {
 }
 
 .effort-input {
+  --effort-track-inset: 10px;
   display: grid;
   gap: 8px;
 }
@@ -304,7 +305,61 @@ h2 {
   font-weight: 900;
 }
 
+.effort-range-wrap {
+  position: relative;
+}
+
+.effort-ticks {
+  position: absolute;
+  top: 50%;
+  right: var(--effort-track-inset);
+  left: var(--effort-track-inset);
+  height: 8px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.effort-ticks span {
+  position: absolute;
+  top: 0;
+  width: 3px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(244, 247, 241, 0.72);
+  transform: translateX(-50%);
+}
+
+.effort-ticks span:nth-child(1) {
+  left: 0%;
+}
+
+.effort-ticks span:nth-child(2) {
+  left: 16.667%;
+}
+
+.effort-ticks span:nth-child(3) {
+  left: 33.333%;
+}
+
+.effort-ticks span:nth-child(4) {
+  left: 50%;
+}
+
+.effort-ticks span:nth-child(5) {
+  left: 66.667%;
+}
+
+.effort-ticks span:nth-child(6) {
+  left: 83.333%;
+}
+
+.effort-ticks span:nth-child(7) {
+  left: 100%;
+}
+
 .effort-input input[type="range"] {
+  position: relative;
+  z-index: 1;
   width: 100%;
   min-height: 32px;
   border: 0;
@@ -315,36 +370,24 @@ h2 {
 
 .effort-scale-wrap {
   position: relative;
-  padding-top: 9px;
-}
-
-.effort-pointer {
-  position: absolute;
-  top: 0;
-  width: 0;
-  height: 0;
-  border-right: 5px solid transparent;
-  border-left: 5px solid transparent;
-  border-bottom: 7px solid #d7f45f;
-  transform: translateX(-50%);
+  height: 16px;
+  margin: -2px var(--effort-track-inset) 0;
 }
 
 .effort-scale {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 4px;
+  position: relative;
+  height: 100%;
   color: #aab5ab;
   font-size: 0.7rem;
   font-weight: 800;
 }
 
-.effort-scale span:nth-child(2),
-.effort-scale span:nth-child(3) {
-  text-align: center;
-}
-
-.effort-scale span:last-child {
-  text-align: right;
+.effort-scale-label {
+  position: absolute;
+  top: 0;
+  width: max-content;
+  transform: translateX(-50%);
+  white-space: nowrap;
 }
 
 .climb-form,
@@ -775,7 +818,7 @@ h2 {
 }
 
 .timeline-scroll {
-  max-height: min(320px, 38vh);
+  max-height: min(640px, 76vh);
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;

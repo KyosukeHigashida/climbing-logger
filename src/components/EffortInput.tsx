@@ -7,27 +7,39 @@ type EffortInputProps = {
 };
 
 export function EffortInput({ value, onChange }: EffortInputProps) {
-  const pointerPosition = `${((value - 1) / 6) * 100}%`;
-
   return (
     <div className="effort-input">
       <div className="effort-value">{effortLabels[value]}</div>
-      <input
-        type="range"
-        min="1"
-        max="7"
-        step="1"
-        value={value}
-        onChange={(event) => onChange(toAttemptEffort(Number(event.target.value)))}
-        aria-label="Attempt effort"
-      />
+      <div className="effort-range-wrap">
+        <div className="effort-ticks" aria-hidden="true">
+          {Array.from({ length: 7 }, (_, index) => (
+            <span key={index} />
+          ))}
+        </div>
+        <input
+          type="range"
+          min="1"
+          max="7"
+          step="1"
+          value={value}
+          onChange={(event) => onChange(toAttemptEffort(Number(event.target.value)))}
+          aria-label="Attempt effort"
+        />
+      </div>
       <div className="effort-scale-wrap" aria-hidden="true">
-        <span className="effort-pointer" style={{ left: pointerPosition }} />
         <div className="effort-scale">
-          <span>Easy</span>
-          <span>Moderate</span>
-          <span>Hard</span>
-          <span>Extreme</span>
+          <span className="effort-scale-label" style={{ left: "0%" }}>
+            Easy
+          </span>
+          <span className="effort-scale-label" style={{ left: "33.333%" }}>
+            Moderate
+          </span>
+          <span className="effort-scale-label" style={{ left: "66.667%" }}>
+            Hard
+          </span>
+          <span className="effort-scale-label" style={{ left: "100%" }}>
+            Extreme
+          </span>
         </div>
       </div>
     </div>
