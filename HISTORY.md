@@ -87,6 +87,23 @@ Timeline display was redesigned around intervals. Attempt blocks show action seg
 
 The mobile UI was repeatedly tightened around iPhone use. Timestamp editing, sliders, card layout, action buttons, and timeline sizing were adjusted by checking narrow mobile widths. The Current Climb card was reshaped into a clearer control surface with inputs, attempts/rest metrics, and a large bottom START action.
 
+## Transition Performance Notes
+
+Home to Session navigation briefly showed loading and progressive field population because the Session screen rebuilt its data from IndexedDB after navigation. Passing already-loaded data through route state helped the first symptom, but it made routing carry too much application data.
+
+An in-memory active session working set was then introduced so warm navigation can render from memory while IndexedDB remains the persistent source of truth. The intent is:
+
+- warm in-app navigation should be instant
+- cold reload or direct URL can rebuild from IndexedDB
+- timers should still derive from timestamps, not stored ticking values
+- the memory store is a cache, not persistence
+
+The first store attempt made interactions worse because it refreshed the full session snapshot after frequent actions such as START, FAIL, SEND, and effort save. That turned quick UI actions into full IndexedDB reload waits.
+
+The corrected direction is to use full snapshot rebuilds only for cold load, direct URL fallback, and less frequent master-data changes. During normal session operation, successful writes should update the in-memory working set by small deltas such as the created climb, created attempt, updated attempt, or removed attempt.
+
+Another important lesson was that Context updates must be no-op when values have not actually changed. Rewriting the same current climb id into the store created unnecessary snapshot objects, which caused repeated renders and made even simple navigation such as Home feel unreliable.
+
 ## Current Out Of Scope
 
 - Authentication
