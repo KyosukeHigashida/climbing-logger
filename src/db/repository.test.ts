@@ -837,7 +837,7 @@ describe("repository", () => {
     expect(snapshot?.wallAngles.map((item) => item.id)).toContain(wallAngle.id);
     expect(snapshot?.climbs.map((item) => item.id)).toEqual([firstClimb.id, secondClimb.id]);
     expect(snapshot?.attempts.map((item) => item.id)).toEqual([attempt.id]);
-    expect(snapshot?.currentClimbId).toBe(firstClimb.id);
+    expect(snapshot?.ui.currentClimbId).toBe(firstClimb.id);
   });
 
   it("restores the current active session snapshot and falls back to the latest climb", async () => {
@@ -850,7 +850,7 @@ describe("repository", () => {
     const snapshot = await loadCurrentActiveSessionSnapshot("missing-climb");
 
     expect(snapshot?.session.id).toBe(session.id);
-    expect(snapshot?.currentClimbId).toBe(secondClimb.id);
+    expect(snapshot?.ui.currentClimbId).toBe(secondClimb.id);
     expect(snapshot?.climbs.map((climb) => climb.id)).toEqual([firstClimb.id, secondClimb.id]);
   });
 

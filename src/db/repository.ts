@@ -26,7 +26,6 @@ export type ActiveSessionSnapshot = {
   boards: Board[];
   grades: Grade[];
   wallAngles: WallAngle[];
-  currentClimbId: string | null;
   ui: {
     currentClimbId: string | null;
     currentWallType: "gym" | "board";
@@ -539,7 +538,6 @@ export async function loadActiveSessionSnapshot(
     boards,
     grades,
     wallAngles,
-    currentClimbId: resolvedCurrentClimbId,
     ui: {
       currentClimbId: resolvedCurrentClimbId,
       ...resolvedCurrentWall,

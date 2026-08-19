@@ -83,7 +83,7 @@ export function SessionPage() {
   const boards = snapshot?.boards ?? [];
   const grades = snapshot?.grades ?? [];
   const wallAngles = snapshot?.wallAngles ?? [];
-  const currentClimbId = snapshot?.ui.currentClimbId ?? snapshot?.currentClimbId ?? null;
+  const currentClimbId = snapshot?.ui.currentClimbId ?? null;
   const wallSelection: WallSelection = useMemo(
     () => ({
       wallType: snapshot?.ui.currentWallType ?? "gym",

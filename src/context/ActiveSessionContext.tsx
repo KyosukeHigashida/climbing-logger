@@ -61,10 +61,10 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
 
   const setCurrentClimbId = useCallback((currentClimbId: string | null) => {
     setSnapshot((current) => {
-      if (!current || current.currentClimbId === currentClimbId) {
+      if (!current || current.ui.currentClimbId === currentClimbId) {
         return current;
       }
-      return { ...current, currentClimbId, ui: { ...current.ui, currentClimbId } };
+      return { ...current, ui: { ...current.ui, currentClimbId } };
     });
   }, []);
 
@@ -95,7 +95,7 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
       const climbs = current.climbs.some((item) => item.id === climb.id)
         ? current.climbs.map((item) => (item.id === climb.id ? climb : item))
         : [...current.climbs, climb];
-      return { ...current, climbs, currentClimbId: climb.id, ui: { ...current.ui, currentClimbId: climb.id } };
+      return { ...current, climbs, ui: { ...current.ui, currentClimbId: climb.id } };
     });
   }, []);
 

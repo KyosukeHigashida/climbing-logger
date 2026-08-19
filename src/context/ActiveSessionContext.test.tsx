@@ -23,7 +23,7 @@ describe("ActiveSessionProvider", () => {
 
     await waitFor(() => expect(result.current.isHydrating).toBe(false));
     expect(result.current.snapshot?.session.id).toBe(session.id);
-    expect(result.current.snapshot?.currentClimbId).toBe(climb.id);
+    expect(result.current.snapshot?.ui.currentClimbId).toBe(climb.id);
   });
 
   it("updates and clears the in-memory active session snapshot", async () => {
@@ -37,12 +37,12 @@ describe("ActiveSessionProvider", () => {
     await act(async () => {
       await result.current.refreshSession(session.id, firstClimb.id);
     });
-    expect(result.current.snapshot?.currentClimbId).toBe(firstClimb.id);
+    expect(result.current.snapshot?.ui.currentClimbId).toBe(firstClimb.id);
 
     act(() => {
       result.current.setCurrentClimbId(secondClimb.id);
     });
-    expect(result.current.snapshot?.currentClimbId).toBe(secondClimb.id);
+    expect(result.current.snapshot?.ui.currentClimbId).toBe(secondClimb.id);
 
     act(() => {
       result.current.clearSnapshot();
