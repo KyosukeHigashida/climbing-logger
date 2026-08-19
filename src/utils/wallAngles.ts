@@ -10,7 +10,7 @@ export function getReusableWallAnglePreset(
   }
 
   const currentVenueWallAngles = wallAngles
-    .filter((wallAngle) => wallAngle.gymId === currentVenueId)
+    .filter((wallAngle) => wallAngle.gymId === currentVenueId && !wallAngle.isArchived)
     .sort((a, b) => a.order - b.order);
   const lastMatchingWallAngle = [...climbs]
     .reverse()

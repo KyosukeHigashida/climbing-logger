@@ -249,7 +249,7 @@ export function SessionPage() {
     .filter((grade) => grade.gymId === (activeSession.initialGymId ?? null) && !grade.isArchived)
     .sort((a, b) => a.order - b.order);
   const venueWallAngles = wallAngles
-    .filter((wallAngle) => wallAngle.gymId === (activeSession.initialGymId ?? null))
+    .filter((wallAngle) => wallAngle.gymId === (activeSession.initialGymId ?? null) && !wallAngle.isArchived)
     .sort((a, b) => a.order - b.order);
   const activeAttempt = attempts.find(isActiveAttempt) ?? null;
   const currentClimbActiveAttempt = activeAttempt && currentClimb?.id === activeAttempt.climbId ? activeAttempt : null;
@@ -265,18 +265,29 @@ export function SessionPage() {
     ? grades.filter((grade) => grade.boardId === wallSelection.wallBoardId && !grade.isArchived).sort((a, b) => a.order - b.order)
     : [];
   const selectedBoardWallAngles = wallSelection.wallBoardId
-    ? wallAngles.filter((wallAngle) => wallAngle.boardId === wallSelection.wallBoardId).sort((a, b) => a.order - b.order)
+    ? wallAngles
+        .filter((wallAngle) => wallAngle.boardId === wallSelection.wallBoardId && !wallAngle.isArchived)
+        .sort((a, b) => a.order - b.order)
     : [];
   const defaultGrades = wallSelection.wallType === "board" ? selectedBoardGrades : venueGrades;
   const defaultWallAngles = wallSelection.wallType === "board" ? selectedBoardWallAngles : venueWallAngles;
   const currentClimbWallAngles =
     climbDraft?.wallType === "board" && climbDraft.wallBoardId
-      ? wallAngles.filter((wallAngle) => wallAngle.boardId === climbDraft.wallBoardId).sort((a, b) => a.order - b.order)
-      : venueWallAngles;
+      ? getSelectableWallAngles(wallAngles.filter((wallAngle) => wallAngle.boardId === climbDraft.wallBoardId), climbDraft.wallAnglePresetId)
+      : getSelectableWallAngles(
+          wallAngles.filter((wallAngle) => wallAngle.gymId === (activeSession.initialGymId ?? null)),
+          climbDraft?.wallAnglePresetId ?? null,
+        );
   const currentClimbGrades =
     climbDraft?.wallType === "board" && climbDraft.wallBoardId
-      ? grades.filter((grade) => grade.boardId === climbDraft.wallBoardId && !grade.isArchived).sort((a, b) => a.order - b.order)
-      : venueGrades;
+      ? getSelectableGrades(
+          grades.filter((grade) => grade.boardId === climbDraft.wallBoardId),
+          climbDraft.gradeId,
+        )
+      : getSelectableGrades(
+          grades.filter((grade) => grade.gymId === (activeSession.initialGymId ?? null)),
+          climbDraft?.gradeId ?? null,
+        );
 
   async function handleAddClimb() {
     if (!sessionId) {
@@ -665,33 +676,27 @@ function EditableClimbCard({
   const [newWallAngle, setNewWallAngle] = useState("");
   const [isAddingWallAngle, setIsAddingWallAngle] = useState(false);
   const currentWallValue = draft.wallType === "board" && draft.wallBoardId ? `board:${draft.wallBoardId}` : "gym";
-  const hasCurrentWallAnglePreset =
-    draft.wallAnglePresetId !== null && wallAngles.some((angle) => angle.id === draft.wallAnglePresetId);
-  const angleOptions =
-    draft.wallAnglePresetId && draft.wallAngle !== null && !hasCurrentWallAnglePreset
-      ? [
-          {
-            id: draft.wallAnglePresetId,
-            angle: draft.wallAngle,
-            label: `${draft.wallAngle}° (saved)`,
-          },
-          ...wallAngles.map((angle) => ({ id: angle.id, angle: angle.angle, label: `${angle.angle}°` })),
-        ]
-      : wallAngles.map((angle) => ({ id: angle.id, angle: angle.angle, label: `${angle.angle}°` }));
+  const gradeOptions = getGradeOptionsForSelect(draft.gradeId, draft.grade, grades);
+  const gradeSelectValue = getGradeSelectValue(draft.gradeId, draft.grade, gradeOptions);
+  const angleOptions = getWallAngleOptionsForSelect(draft.wallAnglePresetId, draft.wallAngle, wallAngles);
+  const wallAngleSelectValue = getWallAngleSelectValue(draft.wallAnglePresetId, draft.wallAngle, angleOptions);
   return (
     <div className="editable-climb-card">
       <div className="climb-field-row">
         <label className="climb-field-grade">
           Grade
           <select
-            value={draft.gradeId ?? ""}
+            value={gradeSelectValue}
             onChange={(event) => {
+              if (event.target.value === SNAPSHOT_GRADE_OPTION_ID) {
+                return;
+              }
               const grade = grades.find((item) => item.id === event.target.value) ?? null;
               onDraftChange({ grade: grade?.label ?? "Ungraded", gradeId: grade?.id ?? null });
             }}
           >
             <option value="">Select</option>
-            {grades.map((grade) => (
+            {gradeOptions.map((grade) => (
               <option key={grade.id} value={grade.id}>
                 {grade.label}
               </option>
@@ -701,11 +706,14 @@ function EditableClimbCard({
         <label className="climb-field-angle">
           Wall angle
           <select
-            value={draft.wallAnglePresetId ?? ""}
+            value={wallAngleSelectValue}
             onChange={(event) => {
               if (event.target.value === "__add_angle__") {
                 setIsAddingWallAngle(true);
                 setNewWallAngle("");
+                return;
+              }
+              if (event.target.value === SNAPSHOT_WALL_ANGLE_OPTION_ID) {
                 return;
               }
               const angle = wallAngles.find((item) => item.id === event.target.value) ?? null;
@@ -854,6 +862,80 @@ function normalizeDraftName(name: string): string | null {
 
 function normalizeDraftMemo(memo: string): string | null {
   return memo.trim() || null;
+}
+
+function getSelectableWallAngles(wallAngles: WallAngle[], currentWallAnglePresetId: string | null): WallAngle[] {
+  return wallAngles
+    .filter((wallAngle) => !wallAngle.isArchived || wallAngle.id === currentWallAnglePresetId)
+    .sort((a, b) => a.order - b.order);
+}
+
+function getSelectableGrades(grades: Grade[], currentGradeId: string | null): Grade[] {
+  return grades
+    .filter((grade) => !grade.isArchived || grade.id === currentGradeId)
+    .sort((a, b) => a.order - b.order);
+}
+
+const SNAPSHOT_GRADE_OPTION_ID = "__snapshot_grade__";
+const SNAPSHOT_WALL_ANGLE_OPTION_ID = "__snapshot_wall_angle__";
+
+export function getGradeOptionsForSelect(
+  gradeId: string | null,
+  gradeLabel: string,
+  grades: Grade[],
+): Array<{ id: string; label: string }> {
+  const hasCurrentGrade = gradeId !== null && grades.some((grade) => grade.id === gradeId);
+  const trimmedGradeLabel = gradeLabel.trim();
+  return trimmedGradeLabel && trimmedGradeLabel !== "Ungraded" && (!gradeId || !hasCurrentGrade)
+    ? [
+        {
+          id: gradeId ?? SNAPSHOT_GRADE_OPTION_ID,
+          label: trimmedGradeLabel,
+        },
+        ...grades.map((grade) => ({ id: grade.id, label: grade.label })),
+      ]
+    : grades.map((grade) => ({ id: grade.id, label: grade.label }));
+}
+
+function getGradeSelectValue(
+  gradeId: string | null,
+  gradeLabel: string,
+  gradeOptions: Array<{ id: string; label: string }>,
+): string {
+  if (gradeId && gradeOptions.some((grade) => grade.id === gradeId)) {
+    return gradeId;
+  }
+  return gradeLabel.trim() && gradeLabel.trim() !== "Ungraded" ? SNAPSHOT_GRADE_OPTION_ID : "";
+}
+
+export function getWallAngleOptionsForSelect(
+  wallAnglePresetId: string | null,
+  wallAngle: number | null,
+  wallAngles: WallAngle[],
+): Array<{ id: string; angle: number; label: string }> {
+  const hasCurrentWallAnglePreset =
+    wallAnglePresetId !== null && wallAngles.some((angle) => angle.id === wallAnglePresetId);
+  return wallAngle !== null && (!wallAnglePresetId || !hasCurrentWallAnglePreset)
+    ? [
+        {
+          id: wallAnglePresetId ?? SNAPSHOT_WALL_ANGLE_OPTION_ID,
+          angle: wallAngle,
+          label: `${wallAngle}°`,
+        },
+        ...wallAngles.map((angle) => ({ id: angle.id, angle: angle.angle, label: `${angle.angle}°` })),
+      ]
+    : wallAngles.map((angle) => ({ id: angle.id, angle: angle.angle, label: `${angle.angle}°` }));
+}
+
+function getWallAngleSelectValue(
+  wallAnglePresetId: string | null,
+  wallAngle: number | null,
+  wallAngleOptions: Array<{ id: string; angle: number; label: string }>,
+): string {
+  if (wallAnglePresetId && wallAngleOptions.some((angle) => angle.id === wallAnglePresetId)) {
+    return wallAnglePresetId;
+  }
+  return wallAngle !== null ? SNAPSHOT_WALL_ANGLE_OPTION_ID : "";
 }
 
 function isClimbIdentityDraftDirty(climb: Climb, draft: ClimbDraft): boolean {

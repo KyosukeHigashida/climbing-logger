@@ -104,6 +104,28 @@ The corrected direction is to use full snapshot rebuilds only for cold load, dir
 
 Another important lesson was that Context updates must be no-op when values have not actually changed. Rewriting the same current climb id into the store created unnecessary snapshot objects, which caused repeated renders and made even simple navigation such as Home feel unreliable.
 
+## Recent Recording Semantics
+
+Climb-level memo was added as a note about the problem itself, such as beta, crux, footholds, or reminders. It is intentionally not treated as a new-climb trigger. Changing grade, wall angle, wall, or name can mean the user is preparing a different climb, but changing memo is usually just adding information to the same climb.
+
+Attempt-level memo was added separately for comments about one try, such as why a fall happened or what changed on that attempt. This distinction matters: climb memo describes the problem, while attempt memo describes the execution.
+
+Effort and attempt memo are collected after FAIL/SEND, but the attempt record itself should already exist by then. This keeps the core logging action fast and preserves the idea that post-attempt metadata can be filled in or skipped without risking the primary record.
+
+The Summary screen is meant to be a review state, not an editing-heavy destructive state. Reopening a session remains possible, but the button is styled as an intentional action. Session deletion was kept out of the immediate post-session summary flow to reduce accidental data loss right after recording.
+
+## Master Data Integrity
+
+Grade and wall angle presets were originally treated as replaceable setup lists. That proved unsafe because old climbs can reference preset IDs. Replacing a master list by deleting and recreating records can leave historical climbs pointing at IDs that no longer exist.
+
+The master-data rule changed: editing gym or board grade/wall-angle presets should preserve existing IDs whenever the same value remains present. Removed presets that have never been used may be deleted, but used presets should be archived instead of hard-deleted.
+
+Archived presets should not appear as normal choices for new climbs. They may still appear when viewing or editing a historical climb that already references them. This allows the gym/board master to evolve while old logs remain understandable.
+
+Wall angle IDs are no longer the only source of display truth. Climbs also carry snapshot values, so a climb should still show its recorded grade or angle even if the original preset is unavailable or archived. The UI should avoid special wording such as "(saved)" and simply display the recorded value naturally.
+
+The same owner boundary remains important: gym presets and board presets can share labels or numeric angles, but they are not the same master records. A gym "V4" and a board "V4", or a gym 40 degree angle and a board 40 degree angle, must not collapse into the same identity.
+
 ## Current Out Of Scope
 
 - Authentication

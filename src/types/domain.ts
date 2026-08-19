@@ -23,6 +23,7 @@ export type WallAngle = {
   boardId?: string | null;
   angle: number;
   order: number;
+  isArchived: boolean;
   createdAt: string;
   updatedAt?: string;
 };

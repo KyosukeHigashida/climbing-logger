@@ -99,3 +99,40 @@ db.version(7).stores({
   attempts:
     "id, sessionId, climbId, startedAt, endedAt, result, timestamp, effort, createdAt, updatedAt",
 });
+
+db.version(8)
+  .stores({
+    gyms: "id, name, isArchived, createdAt, updatedAt",
+    boards: "id, name, isArchived, createdAt, updatedAt",
+    grades: "id, gymId, boardId, order, isArchived, createdAt, updatedAt",
+    wallAngles: "id, gymId, boardId, order, angle, isArchived, createdAt, updatedAt",
+    sessions: "id, startedAt, endedAt, initialGymId, createdAt, updatedAt",
+    climbs:
+      "id, sessionId, gymId, gradeId, wallAnglePresetId, wallType, wallBoardId, wallAngle, createdAt, updatedAt",
+    attempts:
+      "id, sessionId, climbId, startedAt, endedAt, result, timestamp, effort, createdAt, updatedAt",
+  })
+  .upgrade(async (transaction) => {
+    const wallAngles = transaction.table("wallAngles");
+    await wallAngles.toCollection().modify((wallAngle) => {
+      if (wallAngle.isArchived === undefined) {
+        wallAngle.isArchived = false;
+      }
+    });
+
+    const allAngles = await wallAngles.toArray();
+    const angleById = new Map(allAngles.map((angle) => [angle.id, angle]));
+    const climbs = transaction.table("climbs");
+    await climbs.toCollection().modify((climb) => {
+      if (!climb.wallAnglePresetId || angleById.has(climb.wallAnglePresetId)) {
+        return;
+      }
+      const matchingAngle = allAngles.find(
+        (angle) =>
+          angle.angle === climb.wallAngle &&
+          ((climb.wallType === "board" && climb.wallBoardId && angle.boardId === climb.wallBoardId) ||
+            ((climb.wallType === undefined || climb.wallType === "gym") && angle.gymId === climb.gymId)),
+      );
+      climb.wallAnglePresetId = matchingAngle?.id ?? null;
+    });
+  });

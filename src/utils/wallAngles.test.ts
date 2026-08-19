@@ -23,6 +23,7 @@ function angle(input: Partial<WallAngle>): WallAngle {
     gymId: input.gymId ?? "gym-a",
     angle: input.angle ?? 120,
     order: input.order ?? 0,
+    isArchived: input.isArchived ?? false,
     createdAt,
     ...input,
   };

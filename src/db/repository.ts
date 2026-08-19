@@ -3,7 +3,7 @@ import type { Attempt, AttemptEffort, AttemptResult, Board, Climb, Grade, Gym, S
 import { generateId } from "../utils/id";
 import { nowIso } from "../utils/time";
 
-const CURRENT_SCHEMA_VERSION = 9;
+const CURRENT_SCHEMA_VERSION = 10;
 
 export type DataExport = {
   schemaVersion: number;
@@ -101,12 +101,20 @@ export function getBoardGrades(boardId: string, includeArchived = false): Promis
     .sortBy("order");
 }
 
-export function getGymWallAngles(gymId: string): Promise<WallAngle[]> {
-  return db.wallAngles.where("gymId").equals(gymId).sortBy("order");
+export function getGymWallAngles(gymId: string, includeArchived = false): Promise<WallAngle[]> {
+  return db.wallAngles
+    .where("gymId")
+    .equals(gymId)
+    .filter((wallAngle) => includeArchived || !wallAngle.isArchived)
+    .sortBy("order");
 }
 
-export function getBoardWallAngles(boardId: string): Promise<WallAngle[]> {
-  return db.wallAngles.where("boardId").equals(boardId).sortBy("order");
+export function getBoardWallAngles(boardId: string, includeArchived = false): Promise<WallAngle[]> {
+  return db.wallAngles
+    .where("boardId")
+    .equals(boardId)
+    .filter((wallAngle) => includeArchived || !wallAngle.isArchived)
+    .sortBy("order");
 }
 
 export async function createGym(name: string): Promise<Gym> {
@@ -249,23 +257,7 @@ export async function replaceGymGrades(gymId: string, labels: string[]): Promise
     throw new Error("Gym does not exist.");
   }
 
-  const timestamp = nowIso();
-  const grades = labels.map((label, order) => ({
-    id: generateId(),
-    gymId,
-    label: normalizeRequiredText(label, "Grade label is required."),
-    order,
-    isArchived: false,
-    createdAt: timestamp,
-  }));
-
-  await db.transaction("rw", db.grades, async () => {
-    const existing = await db.grades.where("gymId").equals(gymId).toArray();
-    await db.grades.bulkDelete(existing.map((grade) => grade.id));
-    await db.grades.bulkAdd(grades);
-  });
-
-  return grades;
+  return replaceGradeRecords({ type: "gym", id: gymId }, labels);
 }
 
 export async function createBoardGrade(boardId: string, label: string): Promise<Grade> {
@@ -296,24 +288,7 @@ export async function replaceBoardGrades(boardId: string, labels: string[]): Pro
     throw new Error("Board does not exist.");
   }
 
-  const timestamp = nowIso();
-  const grades = labels.map((label, order) => ({
-    id: generateId(),
-    gymId: null,
-    boardId,
-    label: normalizeRequiredText(label, "Grade label is required."),
-    order,
-    isArchived: false,
-    createdAt: timestamp,
-  }));
-
-  await db.transaction("rw", db.grades, async () => {
-    const existing = await db.grades.where("boardId").equals(boardId).toArray();
-    await db.grades.bulkDelete(existing.map((grade) => grade.id));
-    await db.grades.bulkAdd(grades);
-  });
-
-  return grades;
+  return replaceGradeRecords({ type: "board", id: boardId }, labels);
 }
 
 export async function updateGrade(gradeId: string, label: string): Promise<void> {
@@ -390,10 +365,15 @@ export async function createWallAngle(gymId: string, angle: number): Promise<Wal
     throw new Error("Gym does not exist.");
   }
 
-  const existing = await getGymWallAngles(gymId);
+  const existing = await getGymWallAngles(gymId, true);
   const normalizedAngle = validateWallAngleValue(angle);
   const existingAngle = existing.find((wallAngle) => wallAngle.angle === normalizedAngle);
   if (existingAngle) {
+    if (existingAngle.isArchived) {
+      const update = { isArchived: false, updatedAt: nowIso() };
+      await db.wallAngles.update(existingAngle.id, update);
+      return { ...existingAngle, ...update };
+    }
     return existingAngle;
   }
 
@@ -403,6 +383,7 @@ export async function createWallAngle(gymId: string, angle: number): Promise<Wal
     gymId,
     angle: normalizedAngle,
     order: existing.length,
+    isArchived: false,
     createdAt: timestamp,
   };
 
@@ -416,10 +397,15 @@ export async function createBoardWallAngle(boardId: string, angle: number): Prom
     throw new Error("Board does not exist.");
   }
 
-  const existing = await getBoardWallAngles(boardId);
+  const existing = await getBoardWallAngles(boardId, true);
   const normalizedAngle = validateWallAngleValue(angle);
   const existingAngle = existing.find((wallAngle) => wallAngle.angle === normalizedAngle);
   if (existingAngle) {
+    if (existingAngle.isArchived) {
+      const update = { isArchived: false, updatedAt: nowIso() };
+      await db.wallAngles.update(existingAngle.id, update);
+      return { ...existingAngle, ...update };
+    }
     return existingAngle;
   }
 
@@ -430,6 +416,7 @@ export async function createBoardWallAngle(boardId: string, angle: number): Prom
     boardId,
     angle: normalizedAngle,
     order: existing.length,
+    isArchived: false,
     createdAt: timestamp,
   };
 
@@ -443,13 +430,19 @@ export async function updateWallAngle(wallAngleId: string, angle: number): Promi
     throw new Error("Wall angle does not exist.");
   }
 
-  await db.wallAngles.update(wallAngleId, { angle: validateWallAngleValue(angle), updatedAt: nowIso() });
+  await db.wallAngles.update(wallAngleId, { angle: validateWallAngleValue(angle), isArchived: false, updatedAt: nowIso() });
 }
 
 export async function deleteWallAngle(wallAngleId: string): Promise<void> {
   const wallAngle = await db.wallAngles.get(wallAngleId);
   if (!wallAngle) {
     throw new Error("Wall angle does not exist.");
+  }
+
+  const climbCount = await db.climbs.where("wallAnglePresetId").equals(wallAngleId).count();
+  if (climbCount > 0) {
+    await db.wallAngles.update(wallAngleId, { isArchived: true, updatedAt: nowIso() });
+    return;
   }
 
   await db.wallAngles.delete(wallAngleId);
@@ -471,22 +464,7 @@ export async function replaceGymWallAngles(gymId: string, angles: number[]): Pro
     throw new Error("Gym does not exist.");
   }
 
-  const timestamp = nowIso();
-  const wallAngles = angles.map((angle, order) => ({
-    id: generateId(),
-    gymId,
-    angle: validateWallAngleValue(angle),
-    order,
-    createdAt: timestamp,
-  }));
-
-  await db.transaction("rw", db.wallAngles, async () => {
-    const existing = await db.wallAngles.where("gymId").equals(gymId).toArray();
-    await db.wallAngles.bulkDelete(existing.map((angle) => angle.id));
-    await db.wallAngles.bulkAdd(wallAngles);
-  });
-
-  return wallAngles;
+  return replaceWallAngleRecords({ type: "gym", id: gymId }, angles);
 }
 
 export async function replaceBoardWallAngles(boardId: string, angles: number[]): Promise<WallAngle[]> {
@@ -495,23 +473,7 @@ export async function replaceBoardWallAngles(boardId: string, angles: number[]):
     throw new Error("Board does not exist.");
   }
 
-  const timestamp = nowIso();
-  const wallAngles = angles.map((angle, order) => ({
-    id: generateId(),
-    gymId: null,
-    boardId,
-    angle: validateWallAngleValue(angle),
-    order,
-    createdAt: timestamp,
-  }));
-
-  await db.transaction("rw", db.wallAngles, async () => {
-    const existing = await db.wallAngles.where("boardId").equals(boardId).toArray();
-    await db.wallAngles.bulkDelete(existing.map((angle) => angle.id));
-    await db.wallAngles.bulkAdd(wallAngles);
-  });
-
-  return wallAngles;
+  return replaceWallAngleRecords({ type: "board", id: boardId }, angles);
 }
 
 export function getAllSessions(): Promise<Session[]> {
@@ -691,9 +653,15 @@ export async function createClimb(
     throw new Error("Cannot create a climb for a missing session.");
   }
 
-  const resolvedGrade = await validateClimbGymGrade(gymId, gradeId, grade);
-  const resolvedWallAngle = await validateClimbWallAngle(gymId, wallAnglePresetId, wallAngle);
   const resolvedWall = await validateClimbWall(wallType, wallBoardId);
+  const resolvedGrade = await validateClimbGymGrade(gymId, gradeId, grade);
+  const resolvedWallAngle = await validateClimbWallAngle(
+    gymId,
+    wallAnglePresetId,
+    wallAngle,
+    resolvedWall.wallType,
+    resolvedWall.wallBoardId,
+  );
   const timestamp = nowIso();
   const climb: Climb = {
     id: generateId(),
@@ -701,8 +669,8 @@ export async function createClimb(
     grade: resolvedGrade,
     gymId,
     gradeId,
-    wallAnglePresetId,
-    ...(resolvedWallAngle !== null ? { wallAngle: resolvedWallAngle } : {}),
+    wallAnglePresetId: resolvedWallAngle.wallAnglePresetId,
+    ...(resolvedWallAngle.wallAngle !== null ? { wallAngle: resolvedWallAngle.wallAngle } : {}),
     wallType: resolvedWall.wallType,
     wallBoardId: resolvedWall.wallBoardId,
     wallLabel: resolvedWall.wallLabel,
@@ -738,20 +706,27 @@ export async function updateClimb(
   const nextWallAngle = wallAngle === undefined ? climb.wallAngle ?? null : wallAngle;
   const nextWallType = wallType === undefined ? climb.wallType ?? "gym" : wallType;
   const nextWallBoardId = wallBoardId === undefined ? climb.wallBoardId ?? null : wallBoardId;
+  const resolvedWall = await validateClimbWall(nextWallType, nextWallBoardId);
   const resolvedGrade = await validateClimbGymGrade(nextGymId, nextGradeId, grade, {
     allowArchivedGymId: climb.gymId ?? null,
     allowArchivedGradeId: climb.gradeId ?? null,
   });
-  const resolvedWallAngle = await validateClimbWallAngle(nextGymId, nextWallAnglePresetId, nextWallAngle);
-  const resolvedWall = await validateClimbWall(nextWallType, nextWallBoardId);
+  const resolvedWallAngle = await validateClimbWallAngle(
+    nextGymId,
+    nextWallAnglePresetId,
+    nextWallAngle,
+    resolvedWall.wallType,
+    resolvedWall.wallBoardId,
+    { allowArchivedWallAngleId: climb.wallAnglePresetId ?? null },
+  );
   const updatedAt = nowIso();
   const updatedClimb: Climb = {
     ...climb,
     grade: resolvedGrade,
     gymId: nextGymId,
     gradeId: nextGradeId,
-    wallAnglePresetId: nextWallAnglePresetId,
-    ...(resolvedWallAngle === null ? { wallAngle: undefined } : { wallAngle: resolvedWallAngle }),
+    wallAnglePresetId: resolvedWallAngle.wallAnglePresetId,
+    ...(resolvedWallAngle.wallAngle === null ? { wallAngle: undefined } : { wallAngle: resolvedWallAngle.wallAngle }),
     wallType: resolvedWall.wallType,
     wallBoardId: resolvedWall.wallBoardId,
     wallLabel: resolvedWall.wallLabel,
@@ -1086,7 +1061,8 @@ export function validateDataExport(data: unknown): DataExport {
     data.schemaVersion !== 6 &&
     data.schemaVersion !== 7 &&
     data.schemaVersion !== 8 &&
-    data.schemaVersion !== 9
+    data.schemaVersion !== 9 &&
+    data.schemaVersion !== 10
   ) {
     throw new Error("Unsupported backup schema version.");
   }
@@ -1105,7 +1081,8 @@ export function validateDataExport(data: unknown): DataExport {
       data.schemaVersion === 6 ||
       data.schemaVersion === 7 ||
       data.schemaVersion === 8 ||
-      data.schemaVersion === 9) &&
+      data.schemaVersion === 9 ||
+      data.schemaVersion === 10) &&
     (!Array.isArray(data.gyms) || !Array.isArray(data.grades))
   ) {
     throw new Error("Backup must include gyms and grades arrays.");
@@ -1115,13 +1092,18 @@ export function validateDataExport(data: unknown): DataExport {
       data.schemaVersion === 6 ||
       data.schemaVersion === 7 ||
       data.schemaVersion === 8 ||
-      data.schemaVersion === 9) &&
+      data.schemaVersion === 9 ||
+      data.schemaVersion === 10) &&
     !Array.isArray(data.wallAngles)
   ) {
     throw new Error("Backup must include wallAngles array.");
   }
   if (
-    (data.schemaVersion === 6 || data.schemaVersion === 7 || data.schemaVersion === 8 || data.schemaVersion === 9) &&
+    (data.schemaVersion === 6 ||
+      data.schemaVersion === 7 ||
+      data.schemaVersion === 8 ||
+      data.schemaVersion === 9 ||
+      data.schemaVersion === 10) &&
     !Array.isArray(data.boards)
   ) {
     throw new Error("Backup must include boards array.");
@@ -1138,10 +1120,15 @@ export function validateDataExport(data: unknown): DataExport {
     data.schemaVersion === 6 ||
     data.schemaVersion === 7 ||
     data.schemaVersion === 8 ||
-    data.schemaVersion === 9;
+    data.schemaVersion === 9 ||
+    data.schemaVersion === 10;
   const gyms: Gym[] = hasGymMaster ? rawGyms.map(validateGym) : [];
   const boards: Board[] =
-    data.schemaVersion === 6 || data.schemaVersion === 7 || data.schemaVersion === 8 || data.schemaVersion === 9
+    data.schemaVersion === 6 ||
+    data.schemaVersion === 7 ||
+    data.schemaVersion === 8 ||
+    data.schemaVersion === 9 ||
+    data.schemaVersion === 10
       ? rawBoards.map(validateBoard)
       : [];
   const grades: Grade[] = hasGymMaster ? rawGrades.map(validateGrade) : [];
@@ -1150,7 +1137,8 @@ export function validateDataExport(data: unknown): DataExport {
     data.schemaVersion === 6 ||
     data.schemaVersion === 7 ||
     data.schemaVersion === 8 ||
-    data.schemaVersion === 9
+    data.schemaVersion === 9 ||
+    data.schemaVersion === 10
       ? rawWallAngles.map(validateWallAngle)
       : [];
   const sessions: Session[] = data.sessions.map(validateSession);
@@ -1318,9 +1306,15 @@ async function validateClimbWallAngle(
   gymId: string | null,
   wallAnglePresetId: string | null,
   fallbackWallAngle: number | null,
-): Promise<number | null> {
+  wallType: "gym" | "board",
+  wallBoardId: string | null,
+  options: { allowArchivedWallAngleId?: string | null } = {},
+): Promise<{ wallAngle: number | null; wallAnglePresetId: string | null }> {
   if (!wallAnglePresetId) {
-    return fallbackWallAngle === null ? null : validateWallAngleValue(fallbackWallAngle);
+    return {
+      wallAngle: fallbackWallAngle === null ? null : validateWallAngleValue(fallbackWallAngle),
+      wallAnglePresetId: null,
+    };
   }
 
   if (!gymId) {
@@ -1329,13 +1323,26 @@ async function validateClimbWallAngle(
 
   const wallAngle = await db.wallAngles.get(wallAnglePresetId);
   if (!wallAngle) {
-    return fallbackWallAngle === null ? null : validateWallAngleValue(fallbackWallAngle);
+    return {
+      wallAngle: fallbackWallAngle === null ? null : validateWallAngleValue(fallbackWallAngle),
+      wallAnglePresetId: null,
+    };
   }
-  if (wallAngle.gymId && wallAngle.gymId !== gymId) {
+  if (wallType === "board") {
+    if (!wallBoardId || wallAngle.boardId !== wallBoardId) {
+      throw new Error("Climb wall and wall angle do not match.");
+    }
+  } else if (wallAngle.gymId !== gymId) {
     throw new Error("Climb gym and wall angle do not match.");
   }
+  if (wallAngle.isArchived && wallAngle.id !== options.allowArchivedWallAngleId) {
+    throw new Error("Archived wall angles cannot be used for new records.");
+  }
 
-  return validateWallAngleValue(fallbackWallAngle ?? wallAngle.angle);
+  return {
+    wallAngle: validateWallAngleValue(fallbackWallAngle ?? wallAngle.angle),
+    wallAnglePresetId: wallAngle.id,
+  };
 }
 
 async function validateClimbWall(
@@ -1395,6 +1402,162 @@ function normalizeRequiredText(value: string, message: string): string {
 function normalizeOptionalText(value: string | null): string | null {
   const normalized = value?.trim() ?? "";
   return normalized.length > 0 ? normalized : null;
+}
+
+type MasterOwner = { type: "gym"; id: string } | { type: "board"; id: string };
+
+function getOwnerFilter(owner: MasterOwner) {
+  return owner.type === "gym" ? { gymId: owner.id, boardId: null } : { gymId: null, boardId: owner.id };
+}
+
+async function getOwnerGrades(owner: MasterOwner): Promise<Grade[]> {
+  if (owner.type === "gym") {
+    return db.grades.where("gymId").equals(owner.id).toArray();
+  }
+  return db.grades.where("boardId").equals(owner.id).toArray();
+}
+
+async function getOwnerWallAngles(owner: MasterOwner): Promise<WallAngle[]> {
+  if (owner.type === "gym") {
+    return db.wallAngles.where("gymId").equals(owner.id).toArray();
+  }
+  return db.wallAngles.where("boardId").equals(owner.id).toArray();
+}
+
+function assertUniqueValues<T>(values: T[], message: string): void {
+  if (new Set(values).size !== values.length) {
+    throw new Error(message);
+  }
+}
+
+async function replaceGradeRecords(owner: MasterOwner, labels: string[]): Promise<Grade[]> {
+  const normalizedLabels = labels.map((label) => normalizeRequiredText(label, "Grade label is required."));
+  assertUniqueValues(normalizedLabels, "Grade labels must be unique.");
+  const timestamp = nowIso();
+  const ownerFields = getOwnerFilter(owner);
+
+  let activeGrades: Grade[] = [];
+  await db.transaction("rw", db.grades, db.climbs, async () => {
+    const existing = await getOwnerGrades(owner);
+    const existingByLabel = new Map(existing.map((grade) => [grade.label, grade]));
+    const retainedIds = new Set<string>();
+
+    const nextGrades: Grade[] = [];
+    for (const [order, label] of normalizedLabels.entries()) {
+      const existingGrade = existingByLabel.get(label);
+      if (existingGrade) {
+        const updatedGrade: Grade = {
+          ...existingGrade,
+          ...ownerFields,
+          label,
+          order,
+          isArchived: false,
+          updatedAt: timestamp,
+        };
+        await db.grades.update(existingGrade.id, {
+          label,
+          order,
+          isArchived: false,
+          updatedAt: timestamp,
+        });
+        retainedIds.add(existingGrade.id);
+        nextGrades.push(updatedGrade);
+        continue;
+      }
+
+      const grade: Grade = {
+        id: generateId(),
+        ...ownerFields,
+        label,
+        order,
+        isArchived: false,
+        createdAt: timestamp,
+      };
+      await db.grades.add(grade);
+      nextGrades.push(grade);
+    }
+
+    for (const grade of existing) {
+      if (retainedIds.has(grade.id)) {
+        continue;
+      }
+      const climbCount = await db.climbs.where("gradeId").equals(grade.id).count();
+      if (climbCount > 0) {
+        await db.grades.update(grade.id, { isArchived: true, updatedAt: timestamp });
+      } else {
+        await db.grades.delete(grade.id);
+      }
+    }
+
+    activeGrades = nextGrades;
+  });
+
+  return activeGrades;
+}
+
+async function replaceWallAngleRecords(owner: MasterOwner, angles: number[]): Promise<WallAngle[]> {
+  const normalizedAngles = angles.map(validateWallAngleValue);
+  assertUniqueValues(normalizedAngles, "Wall angles must be unique.");
+  const timestamp = nowIso();
+  const ownerFields = getOwnerFilter(owner);
+
+  let activeWallAngles: WallAngle[] = [];
+  await db.transaction("rw", db.wallAngles, db.climbs, async () => {
+    const existing = await getOwnerWallAngles(owner);
+    const existingByAngle = new Map(existing.map((wallAngle) => [wallAngle.angle, wallAngle]));
+    const retainedIds = new Set<string>();
+
+    const nextWallAngles: WallAngle[] = [];
+    for (const [order, angle] of normalizedAngles.entries()) {
+      const existingWallAngle = existingByAngle.get(angle);
+      if (existingWallAngle) {
+        const updatedWallAngle: WallAngle = {
+          ...existingWallAngle,
+          ...ownerFields,
+          angle,
+          order,
+          isArchived: false,
+          updatedAt: timestamp,
+        };
+        await db.wallAngles.update(existingWallAngle.id, {
+          angle,
+          order,
+          isArchived: false,
+          updatedAt: timestamp,
+        });
+        retainedIds.add(existingWallAngle.id);
+        nextWallAngles.push(updatedWallAngle);
+        continue;
+      }
+
+      const wallAngle: WallAngle = {
+        id: generateId(),
+        ...ownerFields,
+        angle,
+        order,
+        isArchived: false,
+        createdAt: timestamp,
+      };
+      await db.wallAngles.add(wallAngle);
+      nextWallAngles.push(wallAngle);
+    }
+
+    for (const wallAngle of existing) {
+      if (retainedIds.has(wallAngle.id)) {
+        continue;
+      }
+      const climbCount = await db.climbs.where("wallAnglePresetId").equals(wallAngle.id).count();
+      if (climbCount > 0) {
+        await db.wallAngles.update(wallAngle.id, { isArchived: true, updatedAt: timestamp });
+      } else {
+        await db.wallAngles.delete(wallAngle.id);
+      }
+    }
+
+    activeWallAngles = nextWallAngles;
+  });
+
+  return activeWallAngles;
 }
 
 async function reorderGradeRecords(grades: Grade[], orderedGradeIds: string[], ownerError: string): Promise<void> {
@@ -1513,6 +1676,7 @@ function validateWallAngle(value: unknown): WallAngle {
     boardId: readOptionalNullableString(value, "boardId"),
     angle: validateWallAngleValue(readNumber(value, "angle")),
     order,
+    isArchived: readOptionalBoolean(value, "isArchived") ?? false,
     createdAt: readIsoString(value, "createdAt"),
   };
   if (!wallAngle.gymId && !wallAngle.boardId) {
@@ -1658,6 +1822,17 @@ function readOptionalWallType(record: Record<string, unknown>, key: string): "gy
 
 function readBoolean(record: Record<string, unknown>, key: string): boolean {
   const value = record[key];
+  if (typeof value !== "boolean") {
+    throw new Error(`Backup ${key} is invalid.`);
+  }
+  return value;
+}
+
+function readOptionalBoolean(record: Record<string, unknown>, key: string): boolean | undefined {
+  const value = record[key];
+  if (value === undefined || value === null) {
+    return undefined;
+  }
   if (typeof value !== "boolean") {
     throw new Error(`Backup ${key} is invalid.`);
   }
