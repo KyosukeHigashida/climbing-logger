@@ -5,8 +5,24 @@ export function registerServiceWorker(): void {
 
   window.addEventListener("load", () => {
     const swUrl = `${import.meta.env.BASE_URL}sw.js`;
-    navigator.serviceWorker.register(swUrl).catch((error: unknown) => {
-      console.warn("Service worker registration failed.", error);
+    let hasReloadedForUpdate = false;
+    const shouldReloadOnControllerChange = Boolean(navigator.serviceWorker.controller);
+
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (!shouldReloadOnControllerChange || hasReloadedForUpdate) {
+        return;
+      }
+      hasReloadedForUpdate = true;
+      window.location.reload();
     });
+
+    navigator.serviceWorker
+      .register(swUrl)
+      .then((registration) => {
+        void registration.update();
+      })
+      .catch((error: unknown) => {
+        console.warn("Service worker registration failed.", error);
+      });
   });
 }

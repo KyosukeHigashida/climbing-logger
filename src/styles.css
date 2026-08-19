@@ -528,6 +528,29 @@ h2 {
   margin-top: 16px;
 }
 
+.preset-loader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.preset-loader select {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  border: 1px solid rgba(212, 221, 209, 0.16);
+  border-radius: 8px;
+  padding: 0 10px;
+  background: #101713;
+  color: #f4f7f1;
+}
+
+.preset-loader button {
+  min-height: 44px;
+  padding: 0 12px;
+}
+
 .grade-table {
   display: grid;
   overflow: hidden;
@@ -585,7 +608,7 @@ h2 {
 .grade-actions {
   display: grid;
   grid-column: 2 / 4;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
   min-width: 0;
 }
@@ -604,6 +627,14 @@ h2 {
   color: #1b0d0b;
 }
 
+.grade-actions.single-action {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.compact-angle-input {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
 .grade-status {
   grid-column: 2;
   margin-top: -4px;
@@ -616,6 +647,10 @@ h2 {
   display: grid;
   gap: 8px;
   margin-top: 14px;
+}
+
+.gym-danger-zone .primary {
+  margin-bottom: 6px;
 }
 
 .attempt-editor .timestamp-input {

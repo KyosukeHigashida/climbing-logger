@@ -8,28 +8,36 @@ import {
   createClimb,
   createGrade,
   createGym,
+  createWallAngle,
   createSession,
   deleteAttempt,
   deleteGrade,
   deleteGym,
   deleteSession,
+  deleteWallAngle,
   endSession,
   exportAllData,
   getActiveSession,
   getGymGrades,
+  getGymWallAngles,
   getSessionAttempts,
   getSessionClimbs,
   moveGrade,
   reorderGrades,
+  replaceGymGrades,
+  replaceGymWallAngles,
   reopenSession,
   restoreAllData,
   updateAttempt,
   updateAttemptEffort,
   updateClimb,
+  updateGrade,
+  updateWallAngle,
   validateDataExport,
 } from "./repository";
 import type { Climb, Session } from "../types/domain";
 import { getAttemptCount, getFailCount, getSendCount, sortAttemptsByTimestampDesc } from "../utils/attempts";
+import { anglePresets, gradePresets } from "../utils/presets";
 
 beforeEach(async () => {
   await db.delete();
@@ -90,6 +98,58 @@ describe("repository", () => {
     await expect(deleteGym(gym.id)).rejects.toThrow("Used gyms can only be archived.");
   });
 
+  it("loads grade presets as editable gym master data", async () => {
+    const gym = await createGym("BETA");
+
+    await replaceGymGrades(gym.id, gradePresets["kyu-dan"].labels);
+    let grades = await getGymGrades(gym.id);
+    expect(grades.map((grade) => grade.label)).toEqual(gradePresets["kyu-dan"].labels);
+
+    await updateGrade(grades[0].id, "10級+");
+    grades = await getGymGrades(gym.id);
+    expect(grades[0].label).toBe("10級+");
+
+    await replaceGymGrades(gym.id, gradePresets["q-d"].labels);
+    grades = await getGymGrades(gym.id);
+    expect(grades.map((grade) => grade.label)).toEqual(gradePresets["q-d"].labels);
+
+    await replaceGymGrades(gym.id, gradePresets["v-grade"].labels);
+    grades = await getGymGrades(gym.id);
+    expect(grades.map((grade) => grade.label)).toEqual(gradePresets["v-grade"].labels);
+    expect(grades.map((grade) => grade.label)).toContain("V12");
+
+    await replaceGymGrades(gym.id, gradePresets["empty"].labels);
+    expect(await getGymGrades(gym.id)).toEqual([]);
+  });
+
+  it("loads wall angle presets as editable gym master data", async () => {
+    const gym = await createGym("BETA");
+
+    await replaceGymWallAngles(gym.id, anglePresets["fixed-10"].angles);
+    let wallAngles = await getGymWallAngles(gym.id);
+    expect(wallAngles.map((angle) => angle.angle)).toEqual(anglePresets["fixed-10"].angles);
+
+    await updateWallAngle(wallAngles[0].id, 92);
+    wallAngles = await getGymWallAngles(gym.id);
+    expect(wallAngles[0].angle).toBe(92);
+
+    await replaceGymWallAngles(gym.id, anglePresets["fixed-5"].angles);
+    wallAngles = await getGymWallAngles(gym.id);
+    expect(wallAngles.map((angle) => angle.angle)).toEqual(anglePresets["fixed-5"].angles);
+
+    await replaceGymWallAngles(gym.id, anglePresets["board-5"].angles);
+    wallAngles = await getGymWallAngles(gym.id);
+    expect(wallAngles.map((angle) => angle.angle)).toEqual(anglePresets["board-5"].angles);
+
+    const custom = await createWallAngle(gym.id, 117);
+    expect((await getGymWallAngles(gym.id)).map((angle) => angle.angle)).toContain(117);
+    await deleteWallAngle(custom.id);
+    expect((await getGymWallAngles(gym.id)).map((angle) => angle.id)).not.toContain(custom.id);
+
+    await replaceGymWallAngles(gym.id, anglePresets["empty"].angles);
+    expect(await getGymWallAngles(gym.id)).toEqual([]);
+  });
+
   it("validates climb gym and grade relationships at repository level", async () => {
     const gymA = await createGym("BETA");
     const gymB = await createGym("Kilter Board");
@@ -129,6 +189,25 @@ describe("repository", () => {
     expect((await db.climbs.get(climbA.id))?.gymId).toBe(beta.id);
     expect((await db.climbs.get(climbB.id))?.gymId).toBe(kilter.id);
     expect((await db.climbs.get(climbC.id))?.gymId).toBe(beta.id);
+  });
+
+  it("keeps climb grade and wall angle snapshots after gym master records change", async () => {
+    const gym = await createGym("BETA");
+    const [grade] = await replaceGymGrades(gym.id, ["2Q"]);
+    const [wallAngle] = await replaceGymWallAngles(gym.id, [120]);
+    const session = await createSession(gym.id);
+
+    const climb = await createClimb(session.id, grade.label, "Yellow", gym.id, grade.id, wallAngle.angle, wallAngle.id);
+
+    await updateGrade(grade.id, "2Q+");
+    await updateWallAngle(wallAngle.id, 125);
+
+    expect(await db.climbs.get(climb.id)).toMatchObject({
+      grade: "2Q",
+      gradeId: grade.id,
+      wallAnglePresetId: wallAngle.id,
+      wallAngle: 120,
+    });
   });
 
   it("creates an attempt only when session and climb belong together", async () => {
@@ -491,10 +570,11 @@ describe("repository", () => {
     const exportedClimb = exported.climbs.find((item) => item.id === climb.id);
     const exportedAttempt = exported.attempts.find((item) => item.id === attempt.id);
 
-    expect(exported.schemaVersion).toBe(4);
+    expect(exported.schemaVersion).toBe(5);
     expect(exported.exportedAt).toBe("2026-08-17T09:01:00.000Z");
     expect(exported.gyms).toHaveLength(0);
     expect(exported.grades).toHaveLength(0);
+    expect(exported.wallAngles).toHaveLength(0);
     expect(exported.sessions).toHaveLength(1);
     expect(exported.climbs).toHaveLength(1);
     expect(exported.attempts).toHaveLength(1);
@@ -517,7 +597,7 @@ describe("repository", () => {
     await createAttempt(oldSession.id, oldClimb.id, "fail");
 
     const backup = {
-      schemaVersion: 4,
+      schemaVersion: 5,
       exportedAt: "2026-08-18T00:00:00.000Z",
       gyms: [
         {
@@ -537,6 +617,15 @@ describe("repository", () => {
           createdAt: "2026-08-17T09:59:30.000Z",
         },
       ],
+      wallAngles: [
+        {
+          id: "angle-restored",
+          gymId: "gym-restored",
+          angle: 120,
+          order: 0,
+          createdAt: "2026-08-17T09:59:45.000Z",
+        },
+      ],
       sessions: [
         {
           id: "session-restored",
@@ -553,6 +642,7 @@ describe("repository", () => {
           grade: "2Q",
           gymId: "gym-restored",
           gradeId: "grade-restored",
+          wallAnglePresetId: "angle-restored",
           wallAngle: 120,
           name: "Restored",
           createdAt: "2026-08-17T10:01:00.000Z",
@@ -576,14 +666,20 @@ describe("repository", () => {
 
     expect(restored.gyms).toHaveLength(1);
     expect(restored.grades).toHaveLength(1);
+    expect(restored.wallAngles).toHaveLength(1);
     expect(restored.sessions).toHaveLength(1);
     expect(await db.sessions.get(oldSession.id)).toBeUndefined();
     expect(await db.sessions.get("session-restored")).toBeTruthy();
     expect(await db.gyms.get("gym-restored")).toBeTruthy();
     expect(await db.grades.get("grade-restored")).toBeTruthy();
+    expect(await db.wallAngles.get("angle-restored")).toMatchObject({
+      gymId: "gym-restored",
+      angle: 120,
+    });
     expect(await db.climbs.get("climb-restored")).toMatchObject({
       gymId: "gym-restored",
       gradeId: "grade-restored",
+      wallAnglePresetId: "angle-restored",
       wallAngle: 120,
     });
     expect(await db.attempts.get("attempt-restored")).toMatchObject({
@@ -649,16 +745,17 @@ describe("repository", () => {
       attempts: [],
     });
 
-    expect(legacy.schemaVersion).toBe(4);
+    expect(legacy.schemaVersion).toBe(5);
     expect(legacy.gyms).toEqual([]);
     expect(legacy.grades).toEqual([]);
+    expect(legacy.wallAngles).toEqual([]);
     expect(legacy.sessions[0].initialGymId).toBeNull();
-    expect(legacy.climbs[0]).toMatchObject({ grade: "2Q", gymId: null, gradeId: null });
+    expect(legacy.climbs[0]).toMatchObject({ grade: "2Q", gymId: null, gradeId: null, wallAnglePresetId: null });
     expect(legacy.climbs[0].wallAngle).toBeUndefined();
   });
 
-  it("opens schema version 4 and reads old records without updatedAt, gym fields, effort, or wall angle", async () => {
-    expect(db.verno).toBe(4);
+  it("opens schema version 5 and reads old records without updatedAt, gym fields, effort, or wall angle", async () => {
+    expect(db.verno).toBe(5);
 
     const oldSession: Session = {
       id: "old-session",

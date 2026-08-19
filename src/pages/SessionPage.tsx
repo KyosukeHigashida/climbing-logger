@@ -16,6 +16,7 @@ import {
   endSession,
   getAllGrades,
   getAllGyms,
+  getAllWallAngles,
   getSession,
   getSessionAttempts,
   getSessionClimbs,
@@ -23,10 +24,11 @@ import {
   updateAttemptEffort,
   updateClimb,
 } from "../db/repository";
-import type { Attempt, AttemptEffort, AttemptResult, Climb, Grade, Gym, Session } from "../types/domain";
+import type { Attempt, AttemptEffort, AttemptResult, Climb, Grade, Gym, Session, WallAngle } from "../types/domain";
 import { getAttemptCount } from "../utils/attempts";
 import { currentClimbStorageKey } from "../utils/currentClimb";
 import { getSavedCurrentVenueId, saveCurrentVenueId } from "../utils/currentVenue";
+import { getReusableWallAnglePreset } from "../utils/wallAngles";
 
 export function SessionPage() {
   const { sessionId } = useParams();
@@ -55,6 +57,7 @@ export function SessionPage() {
   );
   const gyms = useLiveQuery<Gym[]>(() => getAllGyms(), []);
   const grades = useLiveQuery<Grade[]>(() => getAllGrades(), []);
+  const wallAngles = useLiveQuery<WallAngle[]>(() => getAllWallAngles(), []);
 
   const orderedClimbs = useMemo(() => [...(climbs ?? [])].reverse(), [climbs]);
 
@@ -102,7 +105,7 @@ export function SessionPage() {
     }
   }, [currentVenueId, hasLoadedVenue, sessionId]);
 
-  if (session === undefined || !climbs || !attempts || !gyms || !grades) {
+  if (session === undefined || !climbs || !attempts || !gyms || !grades || !wallAngles) {
     return <main className="app-shell loading">Loading session...</main>;
   }
 
@@ -140,13 +143,30 @@ export function SessionPage() {
         .filter((grade) => grade.gymId === (editingClimb.gymId ?? null) && (!grade.isArchived || grade.id === editingClimb.gradeId))
         .sort((a, b) => a.order - b.order)
     : [];
+  const currentVenueWallAngles = wallAngles
+    .filter((wallAngle) => wallAngle.gymId === currentVenueId)
+    .sort((a, b) => a.order - b.order);
+  const initialWallAnglePreset = getReusableWallAnglePreset(climbs, currentVenueId, wallAngles);
+  const editingClimbWallAngles = editingClimb
+    ? wallAngles
+        .filter((wallAngle) => wallAngle.gymId === (editingClimb.gymId ?? null))
+        .sort((a, b) => a.order - b.order)
+    : [];
   const editingVenue = editingClimb?.gymId ? gyms.find((gym) => gym.id === editingClimb.gymId) ?? null : null;
 
   async function handleAddClimb(value: ClimbFormValue) {
     if (!sessionId) {
       return;
     }
-    const climb = await createClimb(sessionId, value.grade, value.name, value.gymId, value.gradeId, value.wallAngle);
+    const climb = await createClimb(
+      sessionId,
+      value.grade,
+      value.name,
+      value.gymId,
+      value.gradeId,
+      value.wallAngle,
+      value.wallAnglePresetId,
+    );
     setCurrentClimbId(climb.id);
     setIsAddingClimb(false);
   }
@@ -155,7 +175,15 @@ export function SessionPage() {
     if (!editingClimbId) {
       return;
     }
-    await updateClimb(editingClimbId, value.grade, value.name, value.gymId, value.gradeId, value.wallAngle);
+    await updateClimb(
+      editingClimbId,
+      value.grade,
+      value.name,
+      value.gymId,
+      value.gradeId,
+      value.wallAngle,
+      value.wallAnglePresetId,
+    );
     setEditingClimbId(null);
   }
 
@@ -282,6 +310,9 @@ export function SessionPage() {
         <ClimbForm
           currentVenue={currentVenue}
           grades={currentVenueGrades}
+          wallAngles={currentVenueWallAngles}
+          initialWallAngle={initialWallAnglePreset?.angle}
+          initialWallAnglePresetId={initialWallAnglePreset?.id ?? null}
           onCancel={() => setIsAddingClimb(false)}
           onSubmit={handleAddClimb}
           submitLabel="START CLIMB"
@@ -295,9 +326,11 @@ export function SessionPage() {
           initialGradeId={editingClimb.gradeId ?? null}
           initialGymId={editingClimb.gymId ?? null}
           initialWallAngle={editingClimb.wallAngle}
+          initialWallAnglePresetId={editingClimb.wallAnglePresetId ?? null}
           initialName={editingClimb.name}
           currentVenue={editingVenue}
           grades={editingClimbGrades}
+          wallAngles={editingClimbWallAngles}
           onCancel={() => setEditingClimbId(null)}
           onSubmit={handleEditClimb}
           submitLabel="SAVE CLIMB"

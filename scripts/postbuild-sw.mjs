@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 
@@ -27,4 +28,19 @@ for (const assetDir of assetDirs) {
 }
 
 const sw = await readFile(swPath, "utf8");
-await writeFile(swPath, sw.replace("self.__APP_ASSETS__ || []", JSON.stringify(assets, null, 2)));
+const versionHash = createHash("sha256").update(sw).update(JSON.stringify(assets));
+for (const file of ["index.html", "manifest.webmanifest"]) {
+  try {
+    versionHash.update(await readFile(join(distDir, file)));
+  } catch {
+    // Optional app-shell file.
+  }
+}
+const cacheVersion = versionHash.digest("hex").slice(0, 12);
+
+await writeFile(
+  swPath,
+  sw
+    .replace('"self.__CACHE_VERSION__"', JSON.stringify(`climbing-logger-${cacheVersion}`))
+    .replace("self.__APP_ASSETS__ || []", JSON.stringify(assets, null, 2)),
+);

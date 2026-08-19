@@ -1,4 +1,4 @@
-const CACHE_VERSION = "climbing-logger-v1";
+const CACHE_VERSION = "self.__CACHE_VERSION__";
 const PRECACHE_ASSETS = self.__APP_ASSETS__ || [];
 const APP_SHELL = ["./", "./index.html", "./manifest.webmanifest", ...PRECACHE_ASSETS];
 
@@ -15,7 +15,13 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_VERSION).map((key) => caches.delete(key))))
+      .then((keys) =>
+        Promise.all(
+          keys
+            .filter((key) => key.startsWith("climbing-logger-") && key !== CACHE_VERSION)
+            .map((key) => caches.delete(key)),
+        ),
+      )
       .then(() => self.clients.claim()),
   );
 });

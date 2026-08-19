@@ -1,9 +1,10 @@
 import Dexie, { type EntityTable } from "dexie";
-import type { Attempt, Climb, Grade, Gym, Session } from "../types/domain";
+import type { Attempt, Climb, Grade, Gym, Session, WallAngle } from "../types/domain";
 
 export const db = new Dexie("climbingLogger") as Dexie & {
   gyms: EntityTable<Gym, "id">;
   grades: EntityTable<Grade, "id">;
+  wallAngles: EntityTable<WallAngle, "id">;
   sessions: EntityTable<Session, "id">;
   climbs: EntityTable<Climb, "id">;
   attempts: EntityTable<Attempt, "id">;
@@ -34,5 +35,14 @@ db.version(4).stores({
   grades: "id, gymId, order, isArchived, createdAt, updatedAt",
   sessions: "id, startedAt, endedAt, initialGymId, createdAt, updatedAt",
   climbs: "id, sessionId, gymId, gradeId, wallAngle, createdAt, updatedAt",
+  attempts: "id, sessionId, climbId, timestamp, result, effort, createdAt, updatedAt",
+});
+
+db.version(5).stores({
+  gyms: "id, name, isArchived, createdAt, updatedAt",
+  grades: "id, gymId, order, isArchived, createdAt, updatedAt",
+  wallAngles: "id, gymId, order, angle, createdAt, updatedAt",
+  sessions: "id, startedAt, endedAt, initialGymId, createdAt, updatedAt",
+  climbs: "id, sessionId, gymId, gradeId, wallAnglePresetId, wallAngle, createdAt, updatedAt",
   attempts: "id, sessionId, climbId, timestamp, result, effort, createdAt, updatedAt",
 });

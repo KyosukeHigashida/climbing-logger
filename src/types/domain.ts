@@ -16,6 +16,15 @@ export type Grade = {
   updatedAt?: string;
 };
 
+export type WallAngle = {
+  id: string;
+  gymId: string;
+  angle: number;
+  order: number;
+  createdAt: string;
+  updatedAt?: string;
+};
+
 export type Session = {
   id: string;
   startedAt: string;
@@ -31,6 +40,7 @@ export type Climb = {
   grade: string;
   gymId?: string | null;
   gradeId?: string | null;
+  wallAnglePresetId?: string | null;
   wallAngle?: number;
   name: string | null;
   createdAt: string;
