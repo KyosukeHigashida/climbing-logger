@@ -17,6 +17,18 @@ export type DataExport = {
   attempts: Attempt[];
 };
 
+export type ActiveSessionSnapshot = {
+  session: Session;
+  climbs: Climb[];
+  attempts: Attempt[];
+  gym: Gym | null;
+  gyms: Gym[];
+  boards: Board[];
+  grades: Grade[];
+  wallAngles: WallAngle[];
+  currentClimbId: string | null;
+};
+
 export type AttemptUpdate = {
   result: AttemptResult | null;
   startedAt?: string | null;
@@ -511,6 +523,47 @@ export async function getActiveSession(): Promise<Session | null> {
   return (await db.sessions.filter((session) => session.endedAt === null).first()) ?? null;
 }
 
+export async function loadCurrentActiveSessionSnapshot(currentClimbId: string | null = null): Promise<ActiveSessionSnapshot | null> {
+  const session = await getActiveSession();
+  return session ? loadActiveSessionSnapshot(session.id, currentClimbId) : null;
+}
+
+export async function loadActiveSessionSnapshot(
+  sessionId: string,
+  currentClimbId: string | null = null,
+): Promise<ActiveSessionSnapshot | null> {
+  const session = await getSession(sessionId);
+  if (!session) {
+    return null;
+  }
+
+  const [climbs, attempts, gyms, boards, grades, wallAngles] = await Promise.all([
+    getSessionClimbs(sessionId),
+    getSessionAttempts(sessionId),
+    getAllGyms(),
+    getActiveBoards(),
+    getAllGrades(),
+    getAllWallAngles(),
+  ]);
+  const gym = session.initialGymId ? gyms.find((item) => item.id === session.initialGymId) ?? null : null;
+  const resolvedCurrentClimbId =
+    currentClimbId && climbs.some((climb) => climb.id === currentClimbId)
+      ? currentClimbId
+      : [...climbs].reverse()[0]?.id ?? null;
+
+  return {
+    session,
+    climbs,
+    attempts,
+    gym,
+    gyms,
+    boards,
+    grades,
+    wallAngles,
+    currentClimbId: resolvedCurrentClimbId,
+  };
+}
+
 export async function getSession(sessionId: string): Promise<Session | null> {
   return (await db.sessions.get(sessionId)) ?? null;
 }
@@ -785,7 +838,7 @@ export async function startAttempt(sessionId: string, climbId: string): Promise<
   return attempt;
 }
 
-export async function finishAttempt(attemptId: string, result: AttemptResult): Promise<void> {
+export async function finishAttempt(attemptId: string, result: AttemptResult): Promise<Attempt> {
   const attempt = await db.attempts.get(attemptId);
   if (!attempt) {
     throw new Error("Attempt does not exist.");
@@ -799,12 +852,14 @@ export async function finishAttempt(attemptId: string, result: AttemptResult): P
     throw new Error("Attempt end time cannot be before start time.");
   }
 
-  await db.attempts.update(attemptId, {
+  const update = {
     endedAt,
     timestamp: endedAt,
     result,
     updatedAt: endedAt,
-  });
+  };
+  await db.attempts.update(attemptId, update);
+  return { ...attempt, ...update };
 }
 
 export async function cancelAttempt(attemptId: string): Promise<void> {
@@ -887,16 +942,18 @@ export async function updateAttempt(attemptId: string, update: AttemptUpdate): P
   });
 }
 
-export async function updateAttemptEffort(attemptId: string, effort: AttemptEffort | null): Promise<void> {
+export async function updateAttemptEffort(attemptId: string, effort: AttemptEffort | null): Promise<Attempt> {
   const attempt = await db.attempts.get(attemptId);
   if (!attempt) {
     throw new Error("Attempt does not exist.");
   }
 
-  await db.attempts.update(attemptId, {
+  const update = {
     effort: effort === null ? undefined : validateEffortValue(effort),
     updatedAt: nowIso(),
-  });
+  };
+  await db.attempts.update(attemptId, update);
+  return { ...attempt, ...update };
 }
 
 export async function deleteAttempt(attemptId: string): Promise<void> {

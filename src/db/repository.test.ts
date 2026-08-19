@@ -30,6 +30,8 @@ import {
   getGymWallAngles,
   getSessionAttempts,
   getSessionClimbs,
+  loadActiveSessionSnapshot,
+  loadCurrentActiveSessionSnapshot,
   moveGrade,
   reorderGrades,
   replaceBoardGrades,
@@ -715,6 +717,45 @@ describe("repository", () => {
     expect((await db.attempts.get(attempt.id))?.effort).toBe(4);
     expect(await getSessionClimbs(session.id)).toHaveLength(1);
     expect(await getSessionAttempts(session.id)).toHaveLength(1);
+  });
+
+  it("loads active session snapshots as a complete working set", async () => {
+    setNow("2026-08-17T09:00:00.000Z");
+    const gym = await createGym("BETA");
+    const grade = await createGrade(gym.id, "2Q");
+    const wallAngle = await createWallAngle(gym.id, 120);
+    const board = await createBoard("Kilter Board");
+    const session = await createSession(gym.id);
+    const firstClimb = await createClimb(session.id, grade.label, "A", gym.id, grade.id, wallAngle.angle, wallAngle.id);
+    setNow("2026-08-17T09:01:00.000Z");
+    const secondClimb = await createClimb(session.id, grade.label, "B", gym.id, grade.id, wallAngle.angle, wallAngle.id);
+    const attempt = await createAttempt(session.id, firstClimb.id, "fail");
+
+    const snapshot = await loadActiveSessionSnapshot(session.id, firstClimb.id);
+
+    expect(snapshot?.session.id).toBe(session.id);
+    expect(snapshot?.gym?.id).toBe(gym.id);
+    expect(snapshot?.gyms.map((item) => item.id)).toContain(gym.id);
+    expect(snapshot?.boards.map((item) => item.id)).toContain(board.id);
+    expect(snapshot?.grades.map((item) => item.id)).toContain(grade.id);
+    expect(snapshot?.wallAngles.map((item) => item.id)).toContain(wallAngle.id);
+    expect(snapshot?.climbs.map((item) => item.id)).toEqual([firstClimb.id, secondClimb.id]);
+    expect(snapshot?.attempts.map((item) => item.id)).toEqual([attempt.id]);
+    expect(snapshot?.currentClimbId).toBe(firstClimb.id);
+  });
+
+  it("restores the current active session snapshot and falls back to the latest climb", async () => {
+    setNow("2026-08-17T09:00:00.000Z");
+    const session = await createSession();
+    const firstClimb = await createClimb(session.id, "2Q", "A");
+    setNow("2026-08-17T09:01:00.000Z");
+    const secondClimb = await createClimb(session.id, "1Q", "B");
+
+    const snapshot = await loadCurrentActiveSessionSnapshot("missing-climb");
+
+    expect(snapshot?.session.id).toBe(session.id);
+    expect(snapshot?.currentClimbId).toBe(secondClimb.id);
+    expect(snapshot?.climbs.map((climb) => climb.id)).toEqual([firstClimb.id, secondClimb.id]);
   });
 
   it("exports complete raw data including attempt timestamps and audit fields", async () => {

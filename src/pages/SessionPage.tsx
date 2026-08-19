@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { useLiveQuery } from "dexie-react-hooks";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { AttemptEditor } from "../components/AttemptEditor";
 import { AttemptTimeline } from "../components/AttemptTimeline";
@@ -7,6 +6,7 @@ import { ClimbList } from "../components/ClimbList";
 import { EffortInput } from "../components/EffortInput";
 import { IntervalTimer } from "../components/IntervalTimer";
 import { SessionTimer } from "../components/SessionTimer";
+import { useActiveSession } from "../context/ActiveSessionContext";
 import {
   cancelAttempt,
   createBoardWallAngle,
@@ -15,17 +15,9 @@ import {
   deleteAttempt,
   endSession,
   finishAttempt,
-  getActiveBoards,
-  getAllGrades,
-  getAllGyms,
-  getAllWallAngles,
-  getSession,
-  getSessionAttempts,
-  getSessionClimbs,
   startAttempt,
   updateAttempt,
   updateAttemptEffort,
-  updateClimb,
 } from "../db/repository";
 import type { Attempt, AttemptEffort, AttemptResult, Board, Climb, Grade, Gym, Session, WallAngle } from "../types/domain";
 import { getAttemptCount, getAttemptEndTime, isActiveAttempt, sortAttemptsByTimestamp } from "../utils/attempts";
@@ -37,35 +29,70 @@ type WallSelection = {
   wallBoardId: string | null;
 };
 
+type ClimbDraft = {
+  grade: string;
+  gradeId: string | null;
+  name: string;
+  wallAngle: number | null;
+  wallAnglePresetId: string | null;
+  wallType: "gym" | "board";
+  wallBoardId: string | null;
+  wallLabel: string | null;
+};
+
 export function SessionPage() {
   const { sessionId } = useParams();
   const navigate = useNavigate();
+  const activeSessionStore = useActiveSession();
+  const {
+    snapshot: storedSnapshot,
+    isHydrating,
+    refreshSession,
+    clearSnapshot,
+    setCurrentClimbId: setStoreCurrentClimbId,
+    upsertClimb,
+    upsertAttempt,
+    removeAttempt,
+  } = activeSessionStore;
+  const snapshot = storedSnapshot?.session.id === sessionId ? storedSnapshot : null;
+  const [isLoadingSnapshot, setIsLoadingSnapshot] = useState(false);
+  const isColdLoading = !snapshot && (isHydrating || isLoadingSnapshot);
   const [currentClimbId, setCurrentClimbId] = useState<string | null>(null);
   const [editingAttemptId, setEditingAttemptId] = useState<string | null>(null);
   const [wallSelection, setWallSelection] = useState<WallSelection>({ wallType: "gym", wallBoardId: null });
   const [pendingEffortAttemptId, setPendingEffortAttemptId] = useState<string | null>(null);
   const [pendingEffort, setPendingEffort] = useState<AttemptEffort>(4);
   const [skipEffort, setSkipEffort] = useState(false);
+  const [finishingAttemptId, setFinishingAttemptId] = useState<string | null>(null);
+  const [climbDraft, setClimbDraft] = useState<ClimbDraft | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const session = useLiveQuery<Session | null>(
-    async () => (sessionId ? getSession(sessionId) : null),
-    [sessionId],
-  );
-  const climbs = useLiveQuery<Climb[]>(
-    () => (sessionId ? getSessionClimbs(sessionId) : Promise.resolve([] as Climb[])),
-    [sessionId],
-  );
-  const attempts = useLiveQuery<Attempt[]>(
-    () => (sessionId ? getSessionAttempts(sessionId) : Promise.resolve([] as Attempt[])),
-    [sessionId],
-  );
-  const gyms = useLiveQuery<Gym[]>(() => getAllGyms(), []);
-  const boards = useLiveQuery<Board[]>(() => getActiveBoards(), []);
-  const grades = useLiveQuery<Grade[]>(() => getAllGrades(), []);
-  const wallAngles = useLiveQuery<WallAngle[]>(() => getAllWallAngles(), []);
+  const session = snapshot?.session;
+  const climbs = snapshot?.climbs ?? [];
+  const attempts = snapshot?.attempts ?? [];
+  const gyms = snapshot?.gyms ?? [];
+  const boards = snapshot?.boards ?? [];
+  const grades = snapshot?.grades ?? [];
+  const wallAngles = snapshot?.wallAngles ?? [];
 
-  const orderedClimbs = useMemo(() => [...(climbs ?? [])].reverse(), [climbs]);
+  const orderedClimbs = useMemo(() => [...climbs].reverse(), [climbs]);
+
+  useEffect(() => {
+    if (!sessionId || snapshot || isHydrating) {
+      return;
+    }
+    let isMounted = true;
+    const storedClimbId = localStorage.getItem(currentClimbStorageKey(sessionId));
+    setIsLoadingSnapshot(true);
+    void refreshSession(sessionId, storedClimbId).finally(() => {
+      if (isMounted) {
+        setIsLoadingSnapshot(false);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [isHydrating, refreshSession, sessionId, snapshot]);
 
   useEffect(() => {
     if (sessionId && !currentClimbId) {
@@ -86,21 +113,28 @@ export function SessionPage() {
   useEffect(() => {
     if (sessionId && currentClimbId) {
       localStorage.setItem(currentClimbStorageKey(sessionId), currentClimbId);
+      setStoreCurrentClimbId(currentClimbId);
     }
-  }, [currentClimbId, sessionId]);
+  }, [currentClimbId, sessionId, setStoreCurrentClimbId]);
 
   useEffect(() => {
-    const active = attempts?.find(isActiveAttempt);
+    const active = attempts.find(isActiveAttempt);
     if (active && currentClimbId !== active.climbId) {
       setCurrentClimbId(active.climbId);
     }
   }, [attempts, currentClimbId]);
 
-  if (session === undefined || !climbs || !attempts || !gyms || !boards || !grades || !wallAngles) {
+  const selectedClimbForDraft = (climbs ?? []).find((climb) => climb.id === currentClimbId) ?? null;
+
+  useEffect(() => {
+    setClimbDraft(selectedClimbForDraft ? createClimbDraft(selectedClimbForDraft) : null);
+  }, [selectedClimbForDraft?.id]);
+
+  if (!session && isColdLoading) {
     return <main className="app-shell loading">Loading session...</main>;
   }
 
-  if (!sessionId || session === null) {
+  if (!sessionId || !session) {
     return (
       <main className="app-shell">
         <section className="panel">
@@ -132,6 +166,7 @@ export function SessionPage() {
   const pendingEffortAttempt = pendingEffortAttemptId
     ? attempts.find((attempt) => attempt.id === pendingEffortAttemptId) ?? null
     : null;
+  const isFinishingCurrentAttempt = finishingAttemptId !== null && finishingAttemptId === currentClimbActiveAttempt?.id;
   const editingAttempt = attempts.find((attempt) => attempt.id === editingAttemptId) ?? null;
   const lastCompletedAttempt = [...sortAttemptsByTimestamp(attempts)].reverse().find((attempt) => getAttemptEndTime(attempt));
   const restStartedAt = getAttemptEndTime(lastCompletedAttempt ?? ({} as Attempt)) ?? activeSession.startedAt;
@@ -144,14 +179,14 @@ export function SessionPage() {
     : [];
   const defaultGrades = wallSelection.wallType === "board" ? selectedBoardGrades : venueGrades;
   const defaultWallAngles = wallSelection.wallType === "board" ? selectedBoardWallAngles : venueWallAngles;
-  const currentClimbGrades =
-    currentClimb?.wallType === "board" && currentClimb.wallBoardId
-      ? grades.filter((grade) => grade.boardId === currentClimb.wallBoardId && !grade.isArchived).sort((a, b) => a.order - b.order)
-      : venueGrades;
   const currentClimbWallAngles =
-    currentClimb?.wallType === "board" && currentClimb.wallBoardId
-      ? wallAngles.filter((wallAngle) => wallAngle.boardId === currentClimb.wallBoardId).sort((a, b) => a.order - b.order)
+    climbDraft?.wallType === "board" && climbDraft.wallBoardId
+      ? wallAngles.filter((wallAngle) => wallAngle.boardId === climbDraft.wallBoardId).sort((a, b) => a.order - b.order)
       : venueWallAngles;
+  const currentClimbGrades =
+    climbDraft?.wallType === "board" && climbDraft.wallBoardId
+      ? grades.filter((grade) => grade.boardId === climbDraft.wallBoardId && !grade.isArchived).sort((a, b) => a.order - b.order)
+      : venueGrades;
 
   async function handleAddClimb() {
     if (!sessionId) {
@@ -197,6 +232,7 @@ export function SessionPage() {
       );
       setWallSelection({ wallType: sourceWallType, wallBoardId: sourceWallBoardId });
       setCurrentClimbId(climb.id);
+      upsertClimb(climb);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add climb.");
     }
@@ -209,34 +245,35 @@ export function SessionPage() {
     }
     setError(null);
     setCurrentClimbId(climbId);
-  }
-
-  async function handleUpdateClimb(climb: Climb, update: Partial<Climb>) {
-    setError(null);
-    try {
-      await updateClimb(
-        climb.id,
-        update.grade ?? climb.grade,
-        update.name === undefined ? climb.name : update.name,
-        activeSession.initialGymId ?? null,
-        update.gradeId === undefined ? climb.gradeId ?? null : update.gradeId ?? null,
-        update.wallAngle === undefined ? climb.wallAngle ?? null : update.wallAngle ?? null,
-        update.wallAnglePresetId === undefined ? climb.wallAnglePresetId ?? null : update.wallAnglePresetId ?? null,
-        update.wallType ?? climb.wallType ?? "gym",
-        update.wallBoardId === undefined ? climb.wallBoardId ?? null : update.wallBoardId ?? null,
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not update climb.");
-    }
+    setStoreCurrentClimbId(climbId);
   }
 
   async function handleStartAttempt() {
-    if (!sessionId || !currentClimb) {
+    if (!sessionId || !currentClimb || !climbDraft) {
       return;
     }
     setError(null);
     try {
-      await startAttempt(sessionId, currentClimb.id);
+      let targetClimbId = currentClimb.id;
+      if (isClimbDraftDirty(currentClimb, climbDraft)) {
+        const nextClimb = await createClimb(
+          sessionId,
+          climbDraft.grade.trim() || "Ungraded",
+          normalizeDraftName(climbDraft.name),
+          activeSession.initialGymId ?? null,
+          climbDraft.gradeId,
+          climbDraft.wallAngle,
+          climbDraft.wallAnglePresetId,
+          climbDraft.wallType,
+          climbDraft.wallBoardId,
+        );
+        targetClimbId = nextClimb.id;
+        setCurrentClimbId(nextClimb.id);
+        upsertClimb(nextClimb);
+      }
+      const attempt = await startAttempt(sessionId, targetClimbId);
+      upsertAttempt(attempt);
+      setStoreCurrentClimbId(targetClimbId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start attempt.");
     }
@@ -247,11 +284,16 @@ export function SessionPage() {
       return;
     }
     setError(null);
+    setFinishingAttemptId(currentClimbActiveAttempt.id);
+    setPendingEffortAttemptId(currentClimbActiveAttempt.id);
+    setPendingEffort(currentClimbActiveAttempt.effort ?? 4);
     try {
-      await finishAttempt(currentClimbActiveAttempt.id, result);
-      setPendingEffortAttemptId(currentClimbActiveAttempt.id);
-      setPendingEffort(currentClimbActiveAttempt.effort ?? 4);
+      const attempt = await finishAttempt(currentClimbActiveAttempt.id, result);
+      upsertAttempt(attempt);
+      setFinishingAttemptId(null);
     } catch (err) {
+      setFinishingAttemptId(null);
+      setPendingEffortAttemptId(null);
       setError(err instanceof Error ? err.message : "Could not finish attempt.");
     }
   }
@@ -263,6 +305,7 @@ export function SessionPage() {
     setError(null);
     try {
       await cancelAttempt(currentClimbActiveAttempt.id);
+      removeAttempt(currentClimbActiveAttempt.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not cancel attempt.");
     }
@@ -274,11 +317,22 @@ export function SessionPage() {
     }
     setError(null);
     try {
-      await updateAttemptEffort(pendingEffortAttemptId, skipEffort ? null : pendingEffort);
+      const attempt = await updateAttemptEffort(pendingEffortAttemptId, skipEffort ? null : pendingEffort);
+      upsertAttempt(attempt);
       setPendingEffortAttemptId(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save effort.");
     }
+  }
+
+  async function handleDeleteAttempt(attemptId: string) {
+    await deleteAttempt(attemptId);
+    await refreshSession(activeSession.id, currentClimbId);
+  }
+
+  async function handleSaveAttempt(attemptId: string, update: Parameters<typeof updateAttempt>[1]) {
+    await updateAttempt(attemptId, update);
+    await refreshSession(activeSession.id, currentClimbId);
   }
 
   async function handleEndSession() {
@@ -288,6 +342,7 @@ export function SessionPage() {
     setError(null);
     try {
       await endSession(sessionId);
+      clearSnapshot();
       navigate(`/session/${sessionId}/summary`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not end session.");
@@ -304,9 +359,9 @@ export function SessionPage() {
           </h1>
         </div>
         <div className="session-header-actions">
-          <Link to="/" className="ghost-link">
+          <button type="button" className="ghost-link" onClick={() => navigate("/")}>
             Home
-          </Link>
+          </button>
         </div>
       </header>
 
@@ -345,72 +400,76 @@ export function SessionPage() {
         {currentClimb ? (
           <div className="current-climb-card">
             <div className="current-climb-layout">
-              <EditableClimbCard
-                climb={currentClimb}
-                venueGymId={activeSession.initialGymId ?? null}
-                grades={currentClimbGrades}
-                wallAngles={currentClimbWallAngles}
-                boards={boards}
-                onUpdate={handleUpdateClimb}
-                onError={setError}
-              />
-              <div className="climb-action-card">
-                {currentClimbActiveAttempt ? (
-                  <div className="attempt-action-grid">
-                    <button className="danger" onClick={() => handleFinishAttempt("fail")}>
-                      FAIL
-                    </button>
-                    <button className="primary" onClick={() => handleFinishAttempt("send")}>
-                      SEND
-                    </button>
-                    <button className="secondary full" onClick={handleCancelAttempt}>
-                      Cancel Attempt
-                    </button>
-                  </div>
-                ) : pendingEffortAttempt ? (
-                  <div className="post-attempt-effort">
-                    <div className="section-heading">
-                      <span className="label">Effort</span>
-                      <label className="skip-effort-toggle">
-                        <input
-                          type="checkbox"
-                          checked={skipEffort}
-                          onChange={(event) => setSkipEffort(event.target.checked)}
-                        />
-                        Skip
-                      </label>
-                    </div>
-                    {skipEffort ? (
-                      <p className="muted compact">Effort will not be recorded.</p>
+              {climbDraft && (
+                <EditableClimbCard
+                  climb={currentClimb}
+                  draft={climbDraft}
+                  venueGymId={activeSession.initialGymId ?? null}
+                  grades={currentClimbGrades}
+                  wallAngles={currentClimbWallAngles}
+                  boards={boards}
+                  onDraftChange={(update) => setClimbDraft((current) => (current ? { ...current, ...update } : current))}
+                  onSnapshotRefresh={() => refreshSession(activeSession.id, currentClimbId)}
+                  onError={setError}
+                />
+              )}
+              <div className="climb-stats-layout climb-stats-stack">
+                <div className="climb-stat-card">
+                  <span className="metric-label">Attempts</span>
+                  <strong>{getAttemptCount(attempts, currentClimb.id)}</strong>
+                </div>
+                <div className="climb-stat-card">
+                  <span className="metric-label">{currentClimbActiveAttempt ? "Action" : "Rest"}</span>
+                  <strong>
+                    {currentClimbActiveAttempt?.startedAt ? (
+                      <IntervalTimer since={currentClimbActiveAttempt.startedAt} />
                     ) : (
-                      <EffortInput value={pendingEffort} onChange={setPendingEffort} />
+                      <IntervalTimer since={restStartedAt} />
                     )}
-                    <button className="secondary full" onClick={handleSavePendingEffort}>
-                      Save
-                    </button>
-                  </div>
-                ) : (
-                  <button className="primary climb-start-button" disabled={Boolean(activeAttempt)} onClick={handleStartAttempt}>
-                    START
-                  </button>
-                )}
+                  </strong>
+                </div>
               </div>
             </div>
-            <div className="climb-stats-layout">
-              <div className="climb-stat-card">
-                <span className="metric-label">Attempts</span>
-                <strong>{getAttemptCount(attempts, currentClimb.id)}</strong>
-              </div>
-              <div className="climb-stat-card">
-                <span className="metric-label">{currentClimbActiveAttempt ? "Action" : "Rest"}</span>
-                <strong>
-                  {currentClimbActiveAttempt?.startedAt ? (
-                    <IntervalTimer since={currentClimbActiveAttempt.startedAt} />
+            <div className="climb-action-card climb-bottom-action">
+              {pendingEffortAttempt ? (
+                <div className="post-attempt-effort">
+                  <div className="section-heading">
+                    <span className="label">Effort</span>
+                    <label className="skip-effort-toggle">
+                      <input
+                        type="checkbox"
+                        checked={skipEffort}
+                        onChange={(event) => setSkipEffort(event.target.checked)}
+                      />
+                      Skip
+                    </label>
+                  </div>
+                  {skipEffort ? (
+                    <p className="muted compact">Effort will not be recorded.</p>
                   ) : (
-                    <IntervalTimer since={restStartedAt} />
+                    <EffortInput value={pendingEffort} onChange={setPendingEffort} />
                   )}
-                </strong>
-              </div>
+                  <button className="secondary full" disabled={Boolean(finishingAttemptId)} onClick={handleSavePendingEffort}>
+                    Save
+                  </button>
+                </div>
+              ) : currentClimbActiveAttempt ? (
+                <div className="attempt-action-grid">
+                  <button className="danger" disabled={isFinishingCurrentAttempt} onClick={() => handleFinishAttempt("fail")}>
+                    FAIL
+                  </button>
+                  <button className="primary" disabled={isFinishingCurrentAttempt} onClick={() => handleFinishAttempt("send")}>
+                    SEND
+                  </button>
+                  <button className="secondary full" disabled={isFinishingCurrentAttempt} onClick={handleCancelAttempt}>
+                    Cancel Attempt
+                  </button>
+                </div>
+              ) : (
+                <button className="primary climb-start-button" disabled={Boolean(activeAttempt)} onClick={handleStartAttempt}>
+                  START
+                </button>
+              )}
             </div>
           </div>
         ) : (
@@ -427,7 +486,6 @@ export function SessionPage() {
         gyms={gyms}
         currentClimbId={currentClimbId}
         onSelect={handleSelectClimb}
-        onAdd={handleAddClimb}
         onEdit={(climb) => handleSelectClimb(climb.id)}
       />
 
@@ -440,8 +498,8 @@ export function SessionPage() {
           sessionStartedAt={activeSession.startedAt}
           sessionEndedAt={activeSession.endedAt}
           onCancel={() => setEditingAttemptId(null)}
-          onDelete={deleteAttempt}
-          onSave={updateAttempt}
+          onDelete={handleDeleteAttempt}
+          onSave={handleSaveAttempt}
         />
       )}
 
@@ -456,35 +514,37 @@ export function SessionPage() {
 
 function EditableClimbCard({
   climb,
+  draft,
   venueGymId,
   grades,
   wallAngles,
   boards,
-  onUpdate,
+  onDraftChange,
+  onSnapshotRefresh,
   onError,
 }: {
   climb: Climb;
+  draft: ClimbDraft;
   venueGymId: string | null;
   grades: Grade[];
   wallAngles: WallAngle[];
   boards: Board[];
-  onUpdate: (climb: Climb, update: Partial<Climb>) => Promise<void>;
+  onDraftChange: (update: Partial<ClimbDraft>) => void;
+  onSnapshotRefresh: () => Promise<unknown>;
   onError: (message: string | null) => void;
 }) {
   const [newWallAngle, setNewWallAngle] = useState("");
   const [isAddingWallAngle, setIsAddingWallAngle] = useState(false);
-  const currentWallValue = climb.wallType === "board" && climb.wallBoardId ? `board:${climb.wallBoardId}` : "gym";
+  const currentWallValue = draft.wallType === "board" && draft.wallBoardId ? `board:${draft.wallBoardId}` : "gym";
   const hasCurrentWallAnglePreset =
-    climb.wallAnglePresetId !== undefined &&
-    climb.wallAnglePresetId !== null &&
-    wallAngles.some((angle) => angle.id === climb.wallAnglePresetId);
+    draft.wallAnglePresetId !== null && wallAngles.some((angle) => angle.id === draft.wallAnglePresetId);
   const angleOptions =
-    climb.wallAnglePresetId && climb.wallAngle !== undefined && !hasCurrentWallAnglePreset
+    draft.wallAnglePresetId && draft.wallAngle !== null && !hasCurrentWallAnglePreset
       ? [
           {
-            id: climb.wallAnglePresetId,
-            angle: climb.wallAngle,
-            label: `${climb.wallAngle}° (saved)`,
+            id: draft.wallAnglePresetId,
+            angle: draft.wallAngle,
+            label: `${draft.wallAngle}° (saved)`,
           },
           ...wallAngles.map((angle) => ({ id: angle.id, angle: angle.angle, label: `${angle.angle}°` })),
         ]
@@ -495,10 +555,10 @@ function EditableClimbCard({
         <label className="climb-field-grade">
           Grade
           <select
-            value={climb.gradeId ?? ""}
+            value={draft.gradeId ?? ""}
             onChange={(event) => {
               const grade = grades.find((item) => item.id === event.target.value) ?? null;
-              void onUpdate(climb, { grade: grade?.label ?? climb.grade, gradeId: grade?.id ?? null });
+              onDraftChange({ grade: grade?.label ?? "Ungraded", gradeId: grade?.id ?? null });
             }}
           >
             <option value="">Select</option>
@@ -512,7 +572,7 @@ function EditableClimbCard({
         <label className="climb-field-angle">
           Wall angle
           <select
-            value={climb.wallAnglePresetId ?? ""}
+            value={draft.wallAnglePresetId ?? ""}
             onChange={(event) => {
               if (event.target.value === "__add_angle__") {
                 setIsAddingWallAngle(true);
@@ -520,12 +580,12 @@ function EditableClimbCard({
                 return;
               }
               const angle = wallAngles.find((item) => item.id === event.target.value) ?? null;
-              if (!angle && event.target.value === climb.wallAnglePresetId) {
+              if (!angle && event.target.value === draft.wallAnglePresetId) {
                 return;
               }
-              void onUpdate(climb, {
+              onDraftChange({
                 wallAnglePresetId: angle?.id ?? null,
-                wallAngle: angle?.angle ?? undefined,
+                wallAngle: angle?.angle ?? null,
               });
             }}
           >
@@ -543,9 +603,9 @@ function EditableClimbCard({
         Name / Number
         <input
           key={climb.id}
-          defaultValue={climb.name ?? ""}
+          value={draft.name}
           placeholder="Yellow #12"
-          onBlur={(event) => void onUpdate(climb, { name: event.target.value.trim() || null })}
+          onChange={(event) => onDraftChange({ name: event.target.value })}
         />
       </label>
       <label>
@@ -554,10 +614,26 @@ function EditableClimbCard({
           value={currentWallValue}
           onChange={(event) => {
             if (event.target.value === "gym") {
-              void onUpdate(climb, { wallType: "gym", wallBoardId: null, wallLabel: "Gym Wall" });
+              onDraftChange({
+                wallType: "gym",
+                wallBoardId: null,
+                wallLabel: "Gym Wall",
+                gradeId: null,
+                wallAngle: null,
+                wallAnglePresetId: null,
+              });
               return;
             }
-            void onUpdate(climb, { wallType: "board", wallBoardId: event.target.value.replace("board:", "") });
+            const boardId = event.target.value.replace("board:", "");
+            const board = boards.find((item) => item.id === boardId) ?? null;
+            onDraftChange({
+              wallType: "board",
+              wallBoardId: boardId,
+              wallLabel: board?.name ?? null,
+              gradeId: null,
+              wallAngle: null,
+              wallAnglePresetId: null,
+            });
           }}
         >
           <option value="gym">Gym Wall</option>
@@ -581,8 +657,8 @@ function EditableClimbCard({
             }
             try {
               const createdAngle =
-                climb.wallType === "board" && climb.wallBoardId
-                  ? await createBoardWallAngle(climb.wallBoardId, parsedAngle)
+                draft.wallType === "board" && draft.wallBoardId
+                  ? await createBoardWallAngle(draft.wallBoardId, parsedAngle)
                   : venueGymId
                     ? await createWallAngle(venueGymId, parsedAngle)
                     : null;
@@ -590,10 +666,11 @@ function EditableClimbCard({
                 onError("Cannot add a wall angle without a gym or board.");
                 return;
               }
-              await onUpdate(climb, {
+              onDraftChange({
                 wallAnglePresetId: createdAngle.id,
                 wallAngle: createdAngle.angle,
               });
+              await onSnapshotRefresh();
               setNewWallAngle("");
               setIsAddingWallAngle(false);
               onError(null);
@@ -625,6 +702,36 @@ function EditableClimbCard({
         </form>
       )}
     </div>
+  );
+}
+
+function createClimbDraft(climb: Climb): ClimbDraft {
+  return {
+    grade: climb.grade,
+    gradeId: climb.gradeId ?? null,
+    name: climb.name ?? "",
+    wallAngle: climb.wallAngle ?? null,
+    wallAnglePresetId: climb.wallAnglePresetId ?? null,
+    wallType: climb.wallType ?? "gym",
+    wallBoardId: climb.wallBoardId ?? null,
+    wallLabel: climb.wallLabel ?? null,
+  };
+}
+
+function normalizeDraftName(name: string): string | null {
+  return name.trim() || null;
+}
+
+function isClimbDraftDirty(climb: Climb, draft: ClimbDraft): boolean {
+  return (
+    climb.grade !== draft.grade ||
+    (climb.gradeId ?? null) !== draft.gradeId ||
+    (climb.name ?? "") !== draft.name ||
+    (climb.wallAngle ?? null) !== draft.wallAngle ||
+    (climb.wallAnglePresetId ?? null) !== draft.wallAnglePresetId ||
+    (climb.wallType ?? "gym") !== draft.wallType ||
+    (climb.wallBoardId ?? null) !== draft.wallBoardId ||
+    (climb.wallLabel ?? null) !== draft.wallLabel
   );
 }
 

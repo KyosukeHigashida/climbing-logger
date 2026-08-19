@@ -2,8 +2,10 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { type ChangeEvent, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SessionTimer } from "../components/SessionTimer";
+import { useActiveSession } from "../context/ActiveSessionContext";
 import {
   createSession,
+  deleteSession,
   exportAllData,
   getActiveSession,
   getActiveGyms,
@@ -23,6 +25,8 @@ export function HomePage() {
   const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
   const [selectedGymId, setSelectedGymId] = useState<string>("");
   const [isQaOpen, setIsQaOpen] = useState(false);
+  const [isEditingSessions, setIsEditingSessions] = useState(false);
+  const activeSessionStore = useActiveSession();
   const sessions = useLiveQuery(() => getAllSessions(), []);
   const attempts = useLiveQuery(() => getAllAttempts(), []);
   const activeSession = useLiveQuery(() => getActiveSession(), []);
@@ -48,10 +52,22 @@ export function HomePage() {
 
     try {
       const session = await createSession(selectedGymId);
+      void activeSessionStore.refreshSession(session.id);
       navigate(`/session/${session.id}`);
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "Could not start session.");
     }
+  }
+
+  async function handleContinueSession() {
+    if (!activeSession) {
+      return;
+    }
+
+    if (activeSessionStore.snapshot?.session.id !== activeSession.id) {
+      void activeSessionStore.refreshSession(activeSession.id);
+    }
+    navigate(`/session/${activeSession.id}`);
   }
 
   async function handleExportData() {
@@ -99,6 +115,26 @@ export function HomePage() {
     }
   }
 
+  async function handleDeleteSession(sessionId: string, label: string, attemptCount: number) {
+    const firstConfirm = window.confirm(
+      `Delete the ${label} session from the session list? This will permanently delete ${attemptCount} attempts and all climbs in that session.`,
+    );
+    if (!firstConfirm) {
+      return;
+    }
+
+    const secondConfirm = window.confirm("This cannot be undone. Delete this session permanently?");
+    if (!secondConfirm) {
+      return;
+    }
+
+    try {
+      await deleteSession(sessionId);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Could not delete session.");
+    }
+  }
+
   return (
     <main className="app-shell">
       <header className="home-hero">
@@ -121,7 +157,7 @@ export function HomePage() {
               </div>
             </div>
           </div>
-          <button className="primary full" onClick={() => navigate(`/session/${activeSession.id}`)}>
+          <button className="primary full" onClick={() => void handleContinueSession()}>
             CONTINUE SESSION
           </button>
         </section>
@@ -172,7 +208,14 @@ export function HomePage() {
       )}
 
       <section className="section">
-        <h2>Recent Sessions</h2>
+        <div className="section-heading">
+          <h2>Recent Sessions</h2>
+          {completedSessions.length > 0 && (
+            <button className="small-text-action" onClick={() => setIsEditingSessions((current) => !current)}>
+              {isEditingSessions ? "Done" : "Edit"}
+            </button>
+          )}
+        </div>
         {completedSessions.length === 0 ? (
           <p className="empty">Completed sessions will stay here.</p>
         ) : (
@@ -180,19 +223,27 @@ export function HomePage() {
             {completedSessions.slice(0, 8).map((session) => {
               const attemptCount = getAttemptCount(attempts.filter((attempt) => attempt.sessionId === session.id));
               const gymName = session.initialGymId ? gymById.get(session.initialGymId)?.name ?? "Unknown Gym" : "No Gym";
+              const label = formatShortDate(session.startedAt);
               return (
-                <button
-                  className="session-row"
-                  key={session.id}
-                  onClick={() => navigate(`/session/${session.id}/summary`)}
-                >
-                  <span>
-                    <strong>{formatShortDate(session.startedAt)}</strong>
-                    <small>{gymName}</small>
-                    <small>{formatSessionDuration(session.startedAt, session.endedAt)}</small>
-                  </span>
-                  <span className="muted">{attemptCount} attempts</span>
-                </button>
+                <div className="session-row" key={session.id}>
+                  <button className="session-open" onClick={() => navigate(`/session/${session.id}/summary`)}>
+                    <span>
+                      <strong>{label}</strong>
+                      <small>{gymName}</small>
+                      <small>{formatSessionDuration(session.startedAt, session.endedAt)}</small>
+                    </span>
+                    <span className="muted">{attemptCount} attempts</span>
+                  </button>
+                  {isEditingSessions && (
+                    <button
+                      className="session-delete-action"
+                      aria-label={`Delete ${label} session`}
+                      onClick={() => void handleDeleteSession(session.id, label, attemptCount)}
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
               );
             })}
           </div>

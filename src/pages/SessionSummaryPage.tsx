@@ -2,9 +2,9 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { AttemptEditor } from "../components/AttemptEditor";
 import { AttemptTimeline } from "../components/AttemptTimeline";
+import { useActiveSession } from "../context/ActiveSessionContext";
 import {
   deleteAttempt,
-  deleteSession,
   getAllGyms,
   getSession,
   getSessionAttempts,
@@ -14,12 +14,13 @@ import {
 } from "../db/repository";
 import type { Attempt, Climb, Gym, Session } from "../types/domain";
 import { getFailCount, getSendCount } from "../utils/attempts";
-import { formatSessionDuration, formatShortDate } from "../utils/time";
+import { formatSessionDuration } from "../utils/time";
 import { useState } from "react";
 
 export function SessionSummaryPage() {
   const { sessionId } = useParams();
   const navigate = useNavigate();
+  const activeSessionStore = useActiveSession();
   const [editingAttemptId, setEditingAttemptId] = useState<string | null>(null);
   const session = useLiveQuery<Session | null>(
     async () => (sessionId ? getSession(sessionId) : null),
@@ -53,9 +54,6 @@ export function SessionSummaryPage() {
     );
   }
 
-  const loadedSession = session;
-  const loadedClimbs = climbs;
-  const loadedAttempts = attempts;
   const sends = getSendCount(attempts);
   const fails = getFailCount(attempts);
   const editingAttempt = attempts.find((attempt) => attempt.id === editingAttemptId) ?? null;
@@ -66,33 +64,8 @@ export function SessionSummaryPage() {
     }
 
     await reopenSession(sessionId);
+    await activeSessionStore.refreshSession(sessionId);
     navigate(`/session/${sessionId}`);
-  }
-
-  async function handleDeleteSession() {
-    if (!sessionId) {
-      return;
-    }
-
-    const label = formatShortDate(loadedSession.startedAt);
-    const firstConfirm = window.confirm(
-      `Delete the ${label} session? This will permanently delete ${loadedAttempts.length} attempts and ${loadedClimbs.length} climbs.`,
-    );
-    if (!firstConfirm) {
-      return;
-    }
-
-    const secondConfirm = window.confirm("This cannot be undone. Delete this session permanently?");
-    if (!secondConfirm) {
-      return;
-    }
-
-    try {
-      await deleteSession(sessionId);
-      navigate("/");
-    } catch (err) {
-      window.alert(err instanceof Error ? err.message : "Could not delete session.");
-    }
   }
 
   return (
@@ -132,10 +105,6 @@ export function SessionSummaryPage() {
 
       <button className="secondary full" onClick={handleReopenSession}>
         Reopen Session
-      </button>
-
-      <button className="danger subtle-danger full" onClick={handleDeleteSession}>
-        Delete Session
       </button>
 
       {editingAttempt && (

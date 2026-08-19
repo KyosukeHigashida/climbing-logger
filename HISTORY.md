@@ -59,12 +59,38 @@ That workflow was later replaced with a GitHub Pages hosted PWA so the app can b
   - `npm run build`
 - Playwright smoke checks were used during development for mobile layout, service worker control, offline reload, and offline attempt recording.
 
-## Out Of Scope
+## Later Product Evolution
+
+After the PWA baseline was established, the app shifted from a simple attempt logger into a more session-realistic climbing workflow.
+
+The largest conceptual change was moving away from "press FAIL/SEND to record a point event" toward a START -> climbing action -> FAIL/SEND -> rest cycle. This came from the need to distinguish action time from rest time and to make rest intervals meaningful across the whole session, not per problem card.
+
+The session venue also became stricter. Starting a session without choosing a gym was considered too ambiguous, so gym selection became required. Once a session starts, its venue is treated as fixed historical context. During the session, the user can still switch the wall context used for new climbs.
+
+Gym and board concepts were separated because gym walls and standardized boards have different identities and presets. "Gym Wall" is treated as the normal wall of the selected venue, while boards such as Kilter Board, Tension Board, or Moon Board are managed separately.
+
+Grade and wall angle management became user-managed master data. The important product decision is that these presets are allowed to evolve while using the app. Adding, deleting, or simplifying presets should not rewrite past climbing records. Existing climbs keep the meaning they had when recorded.
+
+Wall angle entry was adjusted for in-session use. The app should not require a perfect gym master setup before climbing. Angles can be added from the wall angle selector as needed, duplicate angle entry should be harmless, and impossible angle values should be rejected.
+
+The Current Climb card went through several UX revisions. It moved from a separate add/edit form toward an always-visible card where grade, wall angle, name, and wall can be adjusted directly. Later, these fields became a draft for the next climb: changing one of them no longer mutates the existing climb immediately. Instead, pressing START after a change creates a new climb card and starts the attempt there. This made card creation feel like part of the climbing flow rather than a separate management action.
+
+Because START now creates a new card when the current inputs differ, the explicit "+" button in Recent Climbs became redundant and was removed.
+
+Effort recording was added as optional post-attempt metadata. The attempt itself should be recorded immediately on FAIL/SEND; effort should never delay the core record. The effort prompt appears after FAIL/SEND, can be saved or intentionally skipped, and the skip preference carries forward so repeated no-effort logging is low-friction.
+
+The FAIL/SEND to effort transition was tuned to avoid visual flicker. The desired feel is immediate: after FAIL/SEND, the app should move straight into the effort prompt without briefly showing START or an intermediate saving message.
+
+Rest handling was clarified as session-wide. Rest is the interval since the previous completed attempt, regardless of which climb card that attempt belonged to. The label changed away from problem-specific rest wording to avoid implying the timer belongs to one climb.
+
+Timeline display was redesigned around intervals. Attempt blocks show action segments, and rest blocks represent the space between attempts. Rest blocks are intentionally compact and visually simple because they are derived context, not separate logged records.
+
+The mobile UI was repeatedly tightened around iPhone use. Timestamp editing, sliders, card layout, action buttons, and timeline sizing were adjusted by checking narrow mobile widths. The Current Climb card was reshaped into a clearer control surface with inputs, attempts/rest metrics, and a large bottom START action.
+
+## Current Out Of Scope
 
 - Authentication
 - Supabase or cloud sync
-- Gym master data
-- Grade system editor
 - Strength training
 - Statistics and charts
 - AI analysis
