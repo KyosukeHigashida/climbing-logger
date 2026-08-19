@@ -11,6 +11,8 @@ export default function App() {
         <Route path="/" element={<HomePage />} />
         <Route path="/gyms" element={<GymsPage />} />
         <Route path="/gyms/:gymId" element={<GymsPage />} />
+        <Route path="/boards" element={<GymsPage />} />
+        <Route path="/boards/:boardId" element={<GymsPage />} />
         <Route path="/session/:sessionId" element={<SessionPage />} />
         <Route path="/session/:sessionId/summary" element={<SessionSummaryPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />

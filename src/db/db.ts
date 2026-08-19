@@ -1,8 +1,9 @@
 import Dexie, { type EntityTable } from "dexie";
-import type { Attempt, Climb, Grade, Gym, Session, WallAngle } from "../types/domain";
+import type { Attempt, Board, Climb, Grade, Gym, Session, WallAngle } from "../types/domain";
 
 export const db = new Dexie("climbingLogger") as Dexie & {
   gyms: EntityTable<Gym, "id">;
+  boards: EntityTable<Board, "id">;
   grades: EntityTable<Grade, "id">;
   wallAngles: EntityTable<WallAngle, "id">;
   sessions: EntityTable<Session, "id">;
@@ -45,4 +46,56 @@ db.version(5).stores({
   sessions: "id, startedAt, endedAt, initialGymId, createdAt, updatedAt",
   climbs: "id, sessionId, gymId, gradeId, wallAnglePresetId, wallAngle, createdAt, updatedAt",
   attempts: "id, sessionId, climbId, timestamp, result, effort, createdAt, updatedAt",
+});
+
+db.version(6)
+  .stores({
+    gyms: "id, name, isArchived, createdAt, updatedAt",
+    boards: "id, name, isArchived, createdAt, updatedAt",
+    grades: "id, gymId, order, isArchived, createdAt, updatedAt",
+    wallAngles: "id, gymId, order, angle, createdAt, updatedAt",
+    sessions: "id, startedAt, endedAt, initialGymId, createdAt, updatedAt",
+    climbs:
+      "id, sessionId, gymId, gradeId, wallAnglePresetId, wallType, wallBoardId, wallAngle, createdAt, updatedAt",
+    attempts:
+      "id, sessionId, climbId, startedAt, endedAt, result, timestamp, effort, createdAt, updatedAt",
+  })
+  .upgrade(async (transaction) => {
+    const attempts = transaction.table("attempts");
+    await attempts.toCollection().modify((attempt) => {
+      if (attempt.startedAt === undefined) {
+        attempt.startedAt = null;
+      }
+      if (attempt.endedAt === undefined) {
+        attempt.endedAt = attempt.timestamp ?? null;
+      }
+      if (attempt.timestamp === undefined && attempt.endedAt) {
+        attempt.timestamp = attempt.endedAt;
+      }
+    });
+
+    const climbs = transaction.table("climbs");
+    await climbs.toCollection().modify((climb) => {
+      if (climb.wallType === undefined) {
+        climb.wallType = "gym";
+      }
+      if (climb.wallBoardId === undefined) {
+        climb.wallBoardId = null;
+      }
+      if (climb.wallLabel === undefined) {
+        climb.wallLabel = "Gym Wall";
+      }
+    });
+  });
+
+db.version(7).stores({
+  gyms: "id, name, isArchived, createdAt, updatedAt",
+  boards: "id, name, isArchived, createdAt, updatedAt",
+  grades: "id, gymId, boardId, order, isArchived, createdAt, updatedAt",
+  wallAngles: "id, gymId, boardId, order, angle, createdAt, updatedAt",
+  sessions: "id, startedAt, endedAt, initialGymId, createdAt, updatedAt",
+  climbs:
+    "id, sessionId, gymId, gradeId, wallAnglePresetId, wallType, wallBoardId, wallAngle, createdAt, updatedAt",
+  attempts:
+    "id, sessionId, climbId, startedAt, endedAt, result, timestamp, effort, createdAt, updatedAt",
 });

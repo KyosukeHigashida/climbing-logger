@@ -1,14 +1,15 @@
 import { db } from "./db";
-import type { Attempt, AttemptEffort, AttemptResult, Climb, Grade, Gym, Session, WallAngle } from "../types/domain";
+import type { Attempt, AttemptEffort, AttemptResult, Board, Climb, Grade, Gym, Session, WallAngle } from "../types/domain";
 import { generateId } from "../utils/id";
 import { nowIso } from "../utils/time";
 
-const CURRENT_SCHEMA_VERSION = 5;
+const CURRENT_SCHEMA_VERSION = 7;
 
 export type DataExport = {
   schemaVersion: number;
   exportedAt: string;
   gyms: Gym[];
+  boards: Board[];
   grades: Grade[];
   wallAngles: WallAngle[];
   sessions: Session[];
@@ -17,8 +18,10 @@ export type DataExport = {
 };
 
 export type AttemptUpdate = {
-  result: AttemptResult;
-  timestamp: string;
+  result: AttemptResult | null;
+  startedAt?: string | null;
+  endedAt?: string | null;
+  timestamp?: string;
   climbId: string;
   effort?: AttemptEffort | null;
 };
@@ -30,10 +33,21 @@ export type ClimbUpdate = {
   gradeId?: string | null;
   wallAnglePresetId?: string | null;
   wallAngle?: number | null;
+  wallType?: "gym" | "board";
+  wallBoardId?: string | null;
+  wallLabel?: string | null;
 };
 
 export function getAllGyms(): Promise<Gym[]> {
   return db.gyms.orderBy("name").toArray();
+}
+
+export function getAllBoards(): Promise<Board[]> {
+  return db.boards.orderBy("name").toArray();
+}
+
+export function getActiveBoards(): Promise<Board[]> {
+  return db.boards.filter((board) => !board.isArchived).sortBy("name");
 }
 
 export function getActiveGyms(): Promise<Gym[]> {
@@ -60,8 +74,20 @@ export function getGymGrades(gymId: string, includeArchived = false): Promise<Gr
     .sortBy("order");
 }
 
+export function getBoardGrades(boardId: string, includeArchived = false): Promise<Grade[]> {
+  return db.grades
+    .where("boardId")
+    .equals(boardId)
+    .filter((grade) => includeArchived || !grade.isArchived)
+    .sortBy("order");
+}
+
 export function getGymWallAngles(gymId: string): Promise<WallAngle[]> {
   return db.wallAngles.where("gymId").equals(gymId).sortBy("order");
+}
+
+export function getBoardWallAngles(boardId: string): Promise<WallAngle[]> {
+  return db.wallAngles.where("boardId").equals(boardId).sortBy("order");
 }
 
 export async function createGym(name: string): Promise<Gym> {
@@ -122,6 +148,61 @@ export async function deleteGym(gymId: string): Promise<void> {
   });
 }
 
+export async function createBoard(name: string): Promise<Board> {
+  const normalizedName = normalizeRequiredText(name, "Board name is required.");
+  const timestamp = nowIso();
+  const board: Board = {
+    id: generateId(),
+    name: normalizedName,
+    isArchived: false,
+    createdAt: timestamp,
+  };
+
+  await db.boards.add(board);
+  return board;
+}
+
+export async function updateBoard(boardId: string, name: string): Promise<void> {
+  const board = await db.boards.get(boardId);
+  if (!board) {
+    throw new Error("Board does not exist.");
+  }
+
+  await db.boards.update(boardId, {
+    name: normalizeRequiredText(name, "Board name is required."),
+    updatedAt: nowIso(),
+  });
+}
+
+export async function archiveBoard(boardId: string, isArchived = true): Promise<void> {
+  const board = await db.boards.get(boardId);
+  if (!board) {
+    throw new Error("Board does not exist.");
+  }
+
+  await db.boards.update(boardId, { isArchived, updatedAt: nowIso() });
+}
+
+export async function deleteBoard(boardId: string): Promise<void> {
+  const board = await db.boards.get(boardId);
+  if (!board) {
+    throw new Error("Board does not exist.");
+  }
+
+  const climbCount = await db.climbs.where("wallBoardId").equals(boardId).count();
+  if (climbCount > 0) {
+    throw new Error("Used boards can only be archived.");
+  }
+
+  await db.transaction("rw", db.boards, db.grades, db.wallAngles, async () => {
+    const grades = await db.grades.where("boardId").equals(boardId).toArray();
+    const wallAngles = await db.wallAngles.where("boardId").equals(boardId).toArray();
+    await db.grades.bulkDelete(grades.map((grade) => grade.id));
+    await db.wallAngles.bulkDelete(wallAngles.map((angle) => angle.id));
+    await db.boards.delete(boardId);
+  });
+}
+
 export async function createGrade(gymId: string, label: string): Promise<Grade> {
   const gym = await db.gyms.get(gymId);
   if (!gym) {
@@ -161,6 +242,54 @@ export async function replaceGymGrades(gymId: string, labels: string[]): Promise
 
   await db.transaction("rw", db.grades, async () => {
     const existing = await db.grades.where("gymId").equals(gymId).toArray();
+    await db.grades.bulkDelete(existing.map((grade) => grade.id));
+    await db.grades.bulkAdd(grades);
+  });
+
+  return grades;
+}
+
+export async function createBoardGrade(boardId: string, label: string): Promise<Grade> {
+  const board = await db.boards.get(boardId);
+  if (!board) {
+    throw new Error("Board does not exist.");
+  }
+
+  const existing = await getBoardGrades(boardId, true);
+  const timestamp = nowIso();
+  const grade: Grade = {
+    id: generateId(),
+    gymId: null,
+    boardId,
+    label: normalizeRequiredText(label, "Grade label is required."),
+    order: existing.length,
+    isArchived: false,
+    createdAt: timestamp,
+  };
+
+  await db.grades.add(grade);
+  return grade;
+}
+
+export async function replaceBoardGrades(boardId: string, labels: string[]): Promise<Grade[]> {
+  const board = await db.boards.get(boardId);
+  if (!board) {
+    throw new Error("Board does not exist.");
+  }
+
+  const timestamp = nowIso();
+  const grades = labels.map((label, order) => ({
+    id: generateId(),
+    gymId: null,
+    boardId,
+    label: normalizeRequiredText(label, "Grade label is required."),
+    order,
+    isArchived: false,
+    createdAt: timestamp,
+  }));
+
+  await db.transaction("rw", db.grades, async () => {
+    const existing = await db.grades.where("boardId").equals(boardId).toArray();
     await db.grades.bulkDelete(existing.map((grade) => grade.id));
     await db.grades.bulkAdd(grades);
   });
@@ -209,7 +338,7 @@ export async function moveGrade(gradeId: string, direction: "up" | "down"): Prom
     throw new Error("Grade does not exist.");
   }
 
-  const grades = await getGymGrades(grade.gymId, true);
+  const grades = grade.boardId ? await getBoardGrades(grade.boardId, true) : await getGymGrades(grade.gymId ?? "", true);
   const index = grades.findIndex((item) => item.id === gradeId);
   const targetIndex = direction === "up" ? index - 1 : index + 1;
   if (index < 0 || targetIndex < 0 || targetIndex >= grades.length) {
@@ -219,28 +348,21 @@ export async function moveGrade(gradeId: string, direction: "up" | "down"): Prom
   const reordered = [...grades];
   const [moved] = reordered.splice(index, 1);
   reordered.splice(targetIndex, 0, moved);
-  await reorderGrades(
-    grade.gymId,
-    reordered.map((item) => item.id),
-  );
+  if (grade.boardId) {
+    await reorderBoardGrades(grade.boardId, reordered.map((item) => item.id));
+  } else {
+    await reorderGrades(grade.gymId ?? "", reordered.map((item) => item.id));
+  }
 }
 
 export async function reorderGrades(gymId: string, orderedGradeIds: string[]): Promise<void> {
   const grades = await getGymGrades(gymId, true);
-  const existingIds = new Set(grades.map((grade) => grade.id));
-  if (orderedGradeIds.length !== grades.length || new Set(orderedGradeIds).size !== orderedGradeIds.length) {
-    throw new Error("Grade order is invalid.");
-  }
-  if (!orderedGradeIds.every((gradeId) => existingIds.has(gradeId))) {
-    throw new Error("Grade order contains a grade from another gym.");
-  }
+  await reorderGradeRecords(grades, orderedGradeIds, "Grade order contains a grade from another gym.");
+}
 
-  const timestamp = nowIso();
-  await db.transaction("rw", db.grades, async () => {
-    await Promise.all(
-      orderedGradeIds.map((gradeId, order) => db.grades.update(gradeId, { order, updatedAt: timestamp })),
-    );
-  });
+export async function reorderBoardGrades(boardId: string, orderedGradeIds: string[]): Promise<void> {
+  const grades = await getBoardGrades(boardId, true);
+  await reorderGradeRecords(grades, orderedGradeIds, "Grade order contains a grade from another board.");
 }
 
 export async function createWallAngle(gymId: string, angle: number): Promise<WallAngle> {
@@ -250,11 +372,44 @@ export async function createWallAngle(gymId: string, angle: number): Promise<Wal
   }
 
   const existing = await getGymWallAngles(gymId);
+  const normalizedAngle = validateWallAngleValue(angle);
+  const existingAngle = existing.find((wallAngle) => wallAngle.angle === normalizedAngle);
+  if (existingAngle) {
+    return existingAngle;
+  }
+
   const timestamp = nowIso();
   const wallAngle: WallAngle = {
     id: generateId(),
     gymId,
-    angle: validateWallAngleValue(angle),
+    angle: normalizedAngle,
+    order: existing.length,
+    createdAt: timestamp,
+  };
+
+  await db.wallAngles.add(wallAngle);
+  return wallAngle;
+}
+
+export async function createBoardWallAngle(boardId: string, angle: number): Promise<WallAngle> {
+  const board = await db.boards.get(boardId);
+  if (!board) {
+    throw new Error("Board does not exist.");
+  }
+
+  const existing = await getBoardWallAngles(boardId);
+  const normalizedAngle = validateWallAngleValue(angle);
+  const existingAngle = existing.find((wallAngle) => wallAngle.angle === normalizedAngle);
+  if (existingAngle) {
+    return existingAngle;
+  }
+
+  const timestamp = nowIso();
+  const wallAngle: WallAngle = {
+    id: generateId(),
+    gymId: null,
+    boardId,
+    angle: normalizedAngle,
     order: existing.length,
     createdAt: timestamp,
   };
@@ -283,23 +438,12 @@ export async function deleteWallAngle(wallAngleId: string): Promise<void> {
 
 export async function reorderWallAngles(gymId: string, orderedWallAngleIds: string[]): Promise<void> {
   const wallAngles = await getGymWallAngles(gymId);
-  const existingIds = new Set(wallAngles.map((angle) => angle.id));
-  if (
-    orderedWallAngleIds.length !== wallAngles.length ||
-    new Set(orderedWallAngleIds).size !== orderedWallAngleIds.length
-  ) {
-    throw new Error("Wall angle order is invalid.");
-  }
-  if (!orderedWallAngleIds.every((wallAngleId) => existingIds.has(wallAngleId))) {
-    throw new Error("Wall angle order contains an angle from another gym.");
-  }
+  await reorderWallAngleRecords(wallAngles, orderedWallAngleIds, "Wall angle order contains an angle from another gym.");
+}
 
-  const timestamp = nowIso();
-  await db.transaction("rw", db.wallAngles, async () => {
-    await Promise.all(
-      orderedWallAngleIds.map((wallAngleId, order) => db.wallAngles.update(wallAngleId, { order, updatedAt: timestamp })),
-    );
-  });
+export async function reorderBoardWallAngles(boardId: string, orderedWallAngleIds: string[]): Promise<void> {
+  const wallAngles = await getBoardWallAngles(boardId);
+  await reorderWallAngleRecords(wallAngles, orderedWallAngleIds, "Wall angle order contains an angle from another board.");
 }
 
 export async function replaceGymWallAngles(gymId: string, angles: number[]): Promise<WallAngle[]> {
@@ -319,6 +463,31 @@ export async function replaceGymWallAngles(gymId: string, angles: number[]): Pro
 
   await db.transaction("rw", db.wallAngles, async () => {
     const existing = await db.wallAngles.where("gymId").equals(gymId).toArray();
+    await db.wallAngles.bulkDelete(existing.map((angle) => angle.id));
+    await db.wallAngles.bulkAdd(wallAngles);
+  });
+
+  return wallAngles;
+}
+
+export async function replaceBoardWallAngles(boardId: string, angles: number[]): Promise<WallAngle[]> {
+  const board = await db.boards.get(boardId);
+  if (!board) {
+    throw new Error("Board does not exist.");
+  }
+
+  const timestamp = nowIso();
+  const wallAngles = angles.map((angle, order) => ({
+    id: generateId(),
+    gymId: null,
+    boardId,
+    angle: validateWallAngleValue(angle),
+    order,
+    createdAt: timestamp,
+  }));
+
+  await db.transaction("rw", db.wallAngles, async () => {
+    const existing = await db.wallAngles.where("boardId").equals(boardId).toArray();
     await db.wallAngles.bulkDelete(existing.map((angle) => angle.id));
     await db.wallAngles.bulkAdd(wallAngles);
   });
@@ -351,11 +520,27 @@ export function getSessionClimbs(sessionId: string): Promise<Climb[]> {
 }
 
 export function getSessionAttempts(sessionId: string): Promise<Attempt[]> {
-  return db.attempts.where("sessionId").equals(sessionId).sortBy("timestamp");
+  return db.attempts
+    .where("sessionId")
+    .equals(sessionId)
+    .toArray((attempts) => attempts.sort((a, b) => getAttemptSortTime(a) - getAttemptSortTime(b)));
 }
 
 export function getClimbAttempts(climbId: string): Promise<Attempt[]> {
-  return db.attempts.where("climbId").equals(climbId).sortBy("timestamp");
+  return db.attempts
+    .where("climbId")
+    .equals(climbId)
+    .toArray((attempts) => attempts.sort((a, b) => getAttemptSortTime(a) - getAttemptSortTime(b)));
+}
+
+export async function getActiveAttempt(sessionId: string): Promise<Attempt | null> {
+  return (
+    (await db.attempts
+      .where("sessionId")
+      .equals(sessionId)
+      .filter((attempt) => isActiveAttempt(attempt))
+      .first()) ?? null
+  );
 }
 
 export async function createSession(initialGymId: string | null = null): Promise<Session> {
@@ -380,6 +565,10 @@ export async function endSession(sessionId: string): Promise<void> {
   const session = await db.sessions.get(sessionId);
   if (!session) {
     throw new Error("Session does not exist.");
+  }
+  const activeAttempt = await getActiveAttempt(sessionId);
+  if (activeAttempt) {
+    throw new Error("Finish or cancel the active attempt first.");
   }
 
   const timestamp = nowIso();
@@ -419,6 +608,8 @@ export async function createClimb(
   gradeId: string | null = null,
   wallAngle: number | null = null,
   wallAnglePresetId: string | null = null,
+  wallType: "gym" | "board" = "gym",
+  wallBoardId: string | null = null,
 ): Promise<Climb> {
   const session = await db.sessions.get(sessionId);
   if (!session) {
@@ -427,6 +618,7 @@ export async function createClimb(
 
   const resolvedGrade = await validateClimbGymGrade(gymId, gradeId, grade);
   const resolvedWallAngle = await validateClimbWallAngle(gymId, wallAnglePresetId, wallAngle);
+  const resolvedWall = await validateClimbWall(wallType, wallBoardId);
   const timestamp = nowIso();
   const climb: Climb = {
     id: generateId(),
@@ -436,6 +628,9 @@ export async function createClimb(
     gradeId,
     wallAnglePresetId,
     ...(resolvedWallAngle !== null ? { wallAngle: resolvedWallAngle } : {}),
+    wallType: resolvedWall.wallType,
+    wallBoardId: resolvedWall.wallBoardId,
+    wallLabel: resolvedWall.wallLabel,
     name: name && name.trim().length > 0 ? name.trim() : null,
     createdAt: timestamp,
   };
@@ -452,6 +647,8 @@ export async function updateClimb(
   gradeId?: string | null,
   wallAngle?: number | null,
   wallAnglePresetId?: string | null,
+  wallType?: "gym" | "board",
+  wallBoardId?: string | null,
 ): Promise<void> {
   const climb = await db.climbs.get(climbId);
   if (!climb) {
@@ -462,11 +659,14 @@ export async function updateClimb(
   const nextGradeId = gradeId === undefined ? climb.gradeId ?? null : gradeId;
   const nextWallAnglePresetId = wallAnglePresetId === undefined ? climb.wallAnglePresetId ?? null : wallAnglePresetId;
   const nextWallAngle = wallAngle === undefined ? climb.wallAngle ?? null : wallAngle;
+  const nextWallType = wallType === undefined ? climb.wallType ?? "gym" : wallType;
+  const nextWallBoardId = wallBoardId === undefined ? climb.wallBoardId ?? null : wallBoardId;
   const resolvedGrade = await validateClimbGymGrade(nextGymId, nextGradeId, grade, {
     allowArchivedGymId: climb.gymId ?? null,
     allowArchivedGradeId: climb.gradeId ?? null,
   });
   const resolvedWallAngle = await validateClimbWallAngle(nextGymId, nextWallAnglePresetId, nextWallAngle);
+  const resolvedWall = await validateClimbWall(nextWallType, nextWallBoardId);
 
   await db.climbs.update(climbId, {
     grade: resolvedGrade,
@@ -474,6 +674,9 @@ export async function updateClimb(
     gradeId: nextGradeId,
     wallAnglePresetId: nextWallAnglePresetId,
     wallAngle: resolvedWallAngle === null ? undefined : resolvedWallAngle,
+    wallType: resolvedWall.wallType,
+    wallBoardId: resolvedWall.wallBoardId,
+    wallLabel: resolvedWall.wallLabel,
     name: name && name.trim().length > 0 ? name.trim() : null,
     updatedAt: nowIso(),
   });
@@ -504,6 +707,8 @@ export async function createAttempt(
     sessionId,
     climbId,
     timestamp,
+    startedAt: null,
+    endedAt: timestamp,
     result,
     createdAt: timestamp,
   };
@@ -531,12 +736,87 @@ export async function createAttemptForLoadedSessionClimb(
     sessionId: session.id,
     climbId: climb.id,
     timestamp,
+    startedAt: null,
+    endedAt: timestamp,
     result,
     createdAt: timestamp,
   };
 
   await db.attempts.add(attempt);
   return attempt;
+}
+
+export async function startAttempt(sessionId: string, climbId: string): Promise<Attempt> {
+  const session = await db.sessions.get(sessionId);
+  if (!session) {
+    throw new Error("Cannot start an attempt for a missing session.");
+  }
+  if (session.endedAt) {
+    throw new Error("Cannot start an attempt for an ended session.");
+  }
+
+  const climb = await db.climbs.get(climbId);
+  if (!climb) {
+    throw new Error("Cannot start an attempt for a missing climb.");
+  }
+  if (climb.sessionId !== sessionId) {
+    throw new Error("Attempt session and climb session do not match.");
+  }
+
+  const timestamp = nowIso();
+  const attempt: Attempt = {
+    id: generateId(),
+    sessionId,
+    climbId,
+    startedAt: timestamp,
+    endedAt: null,
+    result: null,
+    createdAt: timestamp,
+  };
+
+  await db.transaction("rw", db.attempts, async () => {
+    const activeAttempt = await getActiveAttempt(sessionId);
+    if (activeAttempt) {
+      throw new Error("Finish or cancel the active attempt first.");
+    }
+    await db.attempts.add(attempt);
+  });
+
+  return attempt;
+}
+
+export async function finishAttempt(attemptId: string, result: AttemptResult): Promise<void> {
+  const attempt = await db.attempts.get(attemptId);
+  if (!attempt) {
+    throw new Error("Attempt does not exist.");
+  }
+  if (!isActiveAttempt(attempt)) {
+    throw new Error("Only an active attempt can be finished.");
+  }
+
+  const endedAt = nowIso();
+  if (attempt.startedAt && new Date(endedAt).getTime() < new Date(attempt.startedAt).getTime()) {
+    throw new Error("Attempt end time cannot be before start time.");
+  }
+
+  await db.attempts.update(attemptId, {
+    endedAt,
+    timestamp: endedAt,
+    result,
+    updatedAt: endedAt,
+  });
+}
+
+export async function cancelAttempt(attemptId: string): Promise<void> {
+  const attempt = await db.attempts.get(attemptId);
+  if (!attempt) {
+    throw new Error("Attempt does not exist.");
+  }
+  if (!isActiveAttempt(attempt)) {
+    throw new Error("Only an active attempt can be canceled.");
+  }
+
+  await db.attempts.delete(attemptId);
 }
 
 export async function updateAttempt(attemptId: string, update: AttemptUpdate): Promise<void> {
@@ -559,21 +839,49 @@ export async function updateAttempt(attemptId: string, update: AttemptUpdate): P
     throw new Error("Attempt cannot be moved to a climb in another session.");
   }
 
-  const timestampMs = new Date(update.timestamp).getTime();
-  if (Number.isNaN(timestampMs)) {
-    throw new Error("Attempt timestamp is invalid.");
+  if (
+    (update.startedAt && !isIsoDate(update.startedAt)) ||
+    (update.endedAt && !isIsoDate(update.endedAt)) ||
+    (update.timestamp && !isIsoDate(update.timestamp))
+  ) {
+    throw new Error("Attempt time is invalid.");
   }
+  const startedAt =
+    update.startedAt === undefined
+      ? attempt.startedAt
+      : update.startedAt
+        ? new Date(update.startedAt).toISOString()
+        : null;
+  const endedAt =
+    update.endedAt === undefined
+      ? update.timestamp
+        ? new Date(update.timestamp).toISOString()
+        : attempt.endedAt
+      : update.endedAt
+        ? new Date(update.endedAt).toISOString()
+        : null;
+  validateAttemptState(startedAt, endedAt, update.result);
 
   const sessionStartedMs = new Date(session.startedAt).getTime();
   const sessionEndedMs = session.endedAt ? new Date(session.endedAt).getTime() : Date.now();
-  if (timestampMs < sessionStartedMs || timestampMs > sessionEndedMs) {
+  const rangeTimes = [startedAt, endedAt].filter((value): value is string => Boolean(value));
+  if (rangeTimes.some((value) => new Date(value).getTime() < sessionStartedMs || new Date(value).getTime() > sessionEndedMs)) {
     throw new Error("Attempt time must stay within the session range.");
+  }
+
+  if (endedAt === null) {
+    const activeAttempt = await getActiveAttempt(attempt.sessionId);
+    if (activeAttempt && activeAttempt.id !== attemptId) {
+      throw new Error("Finish or cancel the active attempt first.");
+    }
   }
 
   await db.attempts.update(attemptId, {
     climbId: update.climbId,
     result: update.result,
-    timestamp: new Date(update.timestamp).toISOString(),
+    startedAt,
+    endedAt,
+    timestamp: endedAt ?? undefined,
     effort: update.effort === null ? undefined : update.effort === undefined ? attempt.effort : validateEffortValue(update.effort),
     updatedAt: nowIso(),
   });
@@ -601,8 +909,9 @@ export async function deleteAttempt(attemptId: string): Promise<void> {
 }
 
 export async function exportAllData(): Promise<DataExport> {
-  const [gyms, grades, wallAngles, sessions, climbs, attempts] = await Promise.all([
+  const [gyms, boards, grades, wallAngles, sessions, climbs, attempts] = await Promise.all([
     db.gyms.toArray(),
+    db.boards.toArray(),
     db.grades.toArray(),
     db.wallAngles.toArray(),
     db.sessions.toArray(),
@@ -614,6 +923,7 @@ export async function exportAllData(): Promise<DataExport> {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     exportedAt: nowIso(),
     gyms,
+    boards,
     grades,
     wallAngles,
     sessions,
@@ -625,14 +935,16 @@ export async function exportAllData(): Promise<DataExport> {
 export async function restoreAllData(data: unknown): Promise<DataExport> {
   const backup = validateDataExport(data);
 
-  await db.transaction("rw", [db.gyms, db.grades, db.wallAngles, db.sessions, db.climbs, db.attempts], async () => {
+  await db.transaction("rw", [db.gyms, db.boards, db.grades, db.wallAngles, db.sessions, db.climbs, db.attempts], async () => {
     await db.attempts.clear();
     await db.climbs.clear();
     await db.sessions.clear();
     await db.wallAngles.clear();
     await db.grades.clear();
+    await db.boards.clear();
     await db.gyms.clear();
     await db.gyms.bulkAdd(backup.gyms);
+    await db.boards.bulkAdd(backup.boards);
     await db.grades.bulkAdd(backup.grades);
     await db.wallAngles.bulkAdd(backup.wallAngles);
     await db.sessions.bulkAdd(backup.sessions);
@@ -648,7 +960,14 @@ export function validateDataExport(data: unknown): DataExport {
     throw new Error("Backup must be a JSON object.");
   }
 
-  if (data.schemaVersion !== 2 && data.schemaVersion !== 3 && data.schemaVersion !== 4 && data.schemaVersion !== 5) {
+  if (
+    data.schemaVersion !== 2 &&
+    data.schemaVersion !== 3 &&
+    data.schemaVersion !== 4 &&
+    data.schemaVersion !== 5 &&
+    data.schemaVersion !== 6 &&
+    data.schemaVersion !== 7
+  ) {
     throw new Error("Unsupported backup schema version.");
   }
 
@@ -660,26 +979,44 @@ export function validateDataExport(data: unknown): DataExport {
     throw new Error("Backup must include sessions, climbs, and attempts arrays.");
   }
   if (
-    (data.schemaVersion === 3 || data.schemaVersion === 4 || data.schemaVersion === 5) &&
+    (data.schemaVersion === 3 ||
+      data.schemaVersion === 4 ||
+      data.schemaVersion === 5 ||
+      data.schemaVersion === 6 ||
+      data.schemaVersion === 7) &&
     (!Array.isArray(data.gyms) || !Array.isArray(data.grades))
   ) {
     throw new Error("Backup must include gyms and grades arrays.");
   }
-  if (data.schemaVersion === 5 && !Array.isArray(data.wallAngles)) {
+  if ((data.schemaVersion === 5 || data.schemaVersion === 6 || data.schemaVersion === 7) && !Array.isArray(data.wallAngles)) {
     throw new Error("Backup must include wallAngles array.");
+  }
+  if ((data.schemaVersion === 6 || data.schemaVersion === 7) && !Array.isArray(data.boards)) {
+    throw new Error("Backup must include boards array.");
   }
 
   const rawGyms = Array.isArray(data.gyms) ? data.gyms : [];
+  const rawBoards = Array.isArray(data.boards) ? data.boards : [];
   const rawGrades = Array.isArray(data.grades) ? data.grades : [];
   const rawWallAngles = Array.isArray(data.wallAngles) ? data.wallAngles : [];
-  const hasGymMaster = data.schemaVersion === 3 || data.schemaVersion === 4 || data.schemaVersion === 5;
+  const hasGymMaster =
+    data.schemaVersion === 3 ||
+    data.schemaVersion === 4 ||
+    data.schemaVersion === 5 ||
+    data.schemaVersion === 6 ||
+    data.schemaVersion === 7;
   const gyms: Gym[] = hasGymMaster ? rawGyms.map(validateGym) : [];
+  const boards: Board[] = data.schemaVersion === 6 || data.schemaVersion === 7 ? rawBoards.map(validateBoard) : [];
   const grades: Grade[] = hasGymMaster ? rawGrades.map(validateGrade) : [];
-  const wallAngles: WallAngle[] = data.schemaVersion === 5 ? rawWallAngles.map(validateWallAngle) : [];
+  const wallAngles: WallAngle[] =
+    data.schemaVersion === 5 || data.schemaVersion === 6 || data.schemaVersion === 7
+      ? rawWallAngles.map(validateWallAngle)
+      : [];
   const sessions: Session[] = data.sessions.map(validateSession);
   const climbs: Climb[] = data.climbs.map(validateClimb);
   const attempts: Attempt[] = data.attempts.map(validateAttempt);
   const gymIds = new Set(gyms.map((gym) => gym.id));
+  const boardIds = new Set(boards.map((board) => board.id));
   const gradeById = new Map(grades.map((grade) => [grade.id, grade]));
   const wallAngleById = new Map(wallAngles.map((wallAngle) => [wallAngle.id, wallAngle]));
   const sessionIds = new Set(sessions.map((session) => session.id));
@@ -687,6 +1024,9 @@ export function validateDataExport(data: unknown): DataExport {
 
   if (gymIds.size !== gyms.length) {
     throw new Error("Backup contains duplicate gym ids.");
+  }
+  if (boardIds.size !== boards.length) {
+    throw new Error("Backup contains duplicate board ids.");
   }
   if (gradeById.size !== grades.length) {
     throw new Error("Backup contains duplicate grade ids.");
@@ -705,14 +1045,26 @@ export function validateDataExport(data: unknown): DataExport {
   }
 
   for (const grade of grades) {
-    if (!gymIds.has(grade.gymId)) {
+    if (grade.gymId && !gymIds.has(grade.gymId)) {
       throw new Error("Backup contains a grade for a missing gym.");
+    }
+    if (grade.boardId && !boardIds.has(grade.boardId)) {
+      throw new Error("Backup contains a grade for a missing board.");
+    }
+    if (!grade.gymId && !grade.boardId) {
+      throw new Error("Backup grade owner is invalid.");
     }
   }
 
   for (const wallAngle of wallAngles) {
-    if (!gymIds.has(wallAngle.gymId)) {
+    if (wallAngle.gymId && !gymIds.has(wallAngle.gymId)) {
       throw new Error("Backup contains a wall angle for a missing gym.");
+    }
+    if (wallAngle.boardId && !boardIds.has(wallAngle.boardId)) {
+      throw new Error("Backup contains a wall angle for a missing board.");
+    }
+    if (!wallAngle.gymId && !wallAngle.boardId) {
+      throw new Error("Backup wall angle owner is invalid.");
     }
   }
 
@@ -741,6 +1093,9 @@ export function validateDataExport(data: unknown): DataExport {
         throw new Error("Backup contains a climb whose gym and wall angle do not match.");
       }
     }
+    if (climb.wallType === "board" && climb.wallBoardId && !boardIds.has(climb.wallBoardId)) {
+      throw new Error("Backup contains a climb for a missing board.");
+    }
   }
 
   for (const attempt of attempts) {
@@ -760,6 +1115,7 @@ export function validateDataExport(data: unknown): DataExport {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     exportedAt: data.exportedAt,
     gyms,
+    boards,
     grades,
     wallAngles,
     sessions,
@@ -807,7 +1163,7 @@ async function validateClimbGymGrade(
   if (!grade) {
     throw new Error("Grade does not exist.");
   }
-  if (grade.gymId !== gymId) {
+  if (grade.gymId && grade.gymId !== gymId) {
     throw new Error("Climb gym and grade do not match.");
   }
   if (grade.isArchived && grade.id !== options.allowArchivedGradeId) {
@@ -832,13 +1188,59 @@ async function validateClimbWallAngle(
 
   const wallAngle = await db.wallAngles.get(wallAnglePresetId);
   if (!wallAngle) {
-    throw new Error("Wall angle does not exist.");
+    return fallbackWallAngle === null ? null : validateWallAngleValue(fallbackWallAngle);
   }
-  if (wallAngle.gymId !== gymId) {
+  if (wallAngle.gymId && wallAngle.gymId !== gymId) {
     throw new Error("Climb gym and wall angle do not match.");
   }
 
   return validateWallAngleValue(fallbackWallAngle ?? wallAngle.angle);
+}
+
+async function validateClimbWall(
+  wallType: "gym" | "board",
+  wallBoardId: string | null,
+): Promise<{ wallType: "gym" | "board"; wallBoardId: string | null; wallLabel: string }> {
+  if (wallType === "gym") {
+    return { wallType: "gym", wallBoardId: null, wallLabel: "Gym Wall" };
+  }
+
+  if (!wallBoardId) {
+    throw new Error("A board wall requires a board.");
+  }
+  const board = await db.boards.get(wallBoardId);
+  if (!board) {
+    throw new Error("Board does not exist.");
+  }
+  if (board.isArchived) {
+    throw new Error("Archived boards cannot be used for new records.");
+  }
+
+  return { wallType: "board", wallBoardId, wallLabel: board.name };
+}
+
+function validateAttemptState(
+  startedAt: string | null,
+  endedAt: string | null,
+  result: AttemptResult | null,
+): void {
+  if (startedAt && endedAt && new Date(endedAt).getTime() < new Date(startedAt).getTime()) {
+    throw new Error("Attempt end time cannot be before start time.");
+  }
+  if (endedAt === null && result !== null) {
+    throw new Error("Active attempts cannot have a result.");
+  }
+  if (endedAt !== null && result === null) {
+    throw new Error("Completed attempts require a result.");
+  }
+}
+
+function isActiveAttempt(attempt: Attempt): boolean {
+  return attempt.startedAt !== null && attempt.endedAt === null;
+}
+
+function getAttemptSortTime(attempt: Attempt): number {
+  return new Date(attempt.startedAt ?? attempt.endedAt ?? attempt.timestamp ?? attempt.createdAt).getTime();
 }
 
 function normalizeRequiredText(value: string, message: string): string {
@@ -847,6 +1249,47 @@ function normalizeRequiredText(value: string, message: string): string {
     throw new Error(message);
   }
   return normalized;
+}
+
+async function reorderGradeRecords(grades: Grade[], orderedGradeIds: string[], ownerError: string): Promise<void> {
+  const existingIds = new Set(grades.map((grade) => grade.id));
+  if (orderedGradeIds.length !== grades.length || new Set(orderedGradeIds).size !== orderedGradeIds.length) {
+    throw new Error("Grade order is invalid.");
+  }
+  if (!orderedGradeIds.every((gradeId) => existingIds.has(gradeId))) {
+    throw new Error(ownerError);
+  }
+
+  const timestamp = nowIso();
+  await db.transaction("rw", db.grades, async () => {
+    await Promise.all(
+      orderedGradeIds.map((gradeId, order) => db.grades.update(gradeId, { order, updatedAt: timestamp })),
+    );
+  });
+}
+
+async function reorderWallAngleRecords(
+  wallAngles: WallAngle[],
+  orderedWallAngleIds: string[],
+  ownerError: string,
+): Promise<void> {
+  const existingIds = new Set(wallAngles.map((angle) => angle.id));
+  if (
+    orderedWallAngleIds.length !== wallAngles.length ||
+    new Set(orderedWallAngleIds).size !== orderedWallAngleIds.length
+  ) {
+    throw new Error("Wall angle order is invalid.");
+  }
+  if (!orderedWallAngleIds.every((wallAngleId) => existingIds.has(wallAngleId))) {
+    throw new Error(ownerError);
+  }
+
+  const timestamp = nowIso();
+  await db.transaction("rw", db.wallAngles, async () => {
+    await Promise.all(
+      orderedWallAngleIds.map((wallAngleId, order) => db.wallAngles.update(wallAngleId, { order, updatedAt: timestamp })),
+    );
+  });
 }
 
 function validateGym(value: unknown): Gym {
@@ -866,6 +1309,23 @@ function validateGym(value: unknown): Gym {
   return gym;
 }
 
+function validateBoard(value: unknown): Board {
+  if (!isRecord(value)) {
+    throw new Error("Backup board is invalid.");
+  }
+  const board: Board = {
+    id: readString(value, "id"),
+    name: readString(value, "name"),
+    isArchived: readBoolean(value, "isArchived"),
+    createdAt: readIsoString(value, "createdAt"),
+  };
+  const updatedAt = readOptionalIsoString(value, "updatedAt");
+  if (updatedAt) {
+    board.updatedAt = updatedAt;
+  }
+  return board;
+}
+
 function validateGrade(value: unknown): Grade {
   if (!isRecord(value)) {
     throw new Error("Backup grade is invalid.");
@@ -876,12 +1336,16 @@ function validateGrade(value: unknown): Grade {
   }
   const grade: Grade = {
     id: readString(value, "id"),
-    gymId: readString(value, "gymId"),
+    gymId: readOptionalNullableString(value, "gymId"),
+    boardId: readOptionalNullableString(value, "boardId"),
     label: readString(value, "label"),
     order,
     isArchived: readBoolean(value, "isArchived"),
     createdAt: readIsoString(value, "createdAt"),
   };
+  if (!grade.gymId && !grade.boardId) {
+    throw new Error("Backup grade owner is invalid.");
+  }
   const updatedAt = readOptionalIsoString(value, "updatedAt");
   if (updatedAt) {
     grade.updatedAt = updatedAt;
@@ -899,11 +1363,15 @@ function validateWallAngle(value: unknown): WallAngle {
   }
   const wallAngle: WallAngle = {
     id: readString(value, "id"),
-    gymId: readString(value, "gymId"),
+    gymId: readOptionalNullableString(value, "gymId"),
+    boardId: readOptionalNullableString(value, "boardId"),
     angle: validateWallAngleValue(readNumber(value, "angle")),
     order,
     createdAt: readIsoString(value, "createdAt"),
   };
+  if (!wallAngle.gymId && !wallAngle.boardId) {
+    throw new Error("Backup wall angle owner is invalid.");
+  }
   const updatedAt = readOptionalIsoString(value, "updatedAt");
   if (updatedAt) {
     wallAngle.updatedAt = updatedAt;
@@ -940,6 +1408,9 @@ function validateClimb(value: unknown): Climb {
     gymId: readOptionalNullableString(value, "gymId"),
     gradeId: readOptionalNullableString(value, "gradeId"),
     wallAnglePresetId: readOptionalNullableString(value, "wallAnglePresetId"),
+    wallType: readOptionalWallType(value, "wallType"),
+    wallBoardId: readOptionalNullableString(value, "wallBoardId"),
+    wallLabel: readOptionalNullableString(value, "wallLabel") ?? "Gym Wall",
     name: readNullableString(value, "name"),
     createdAt: readIsoString(value, "createdAt"),
   };
@@ -958,15 +1429,26 @@ function validateAttempt(value: unknown): Attempt {
   if (!isRecord(value)) {
     throw new Error("Backup attempt is invalid.");
   }
-  const result = readString(value, "result");
-  if (result !== "fail" && result !== "send") {
+  const rawResult = value.result;
+  if (rawResult !== "fail" && rawResult !== "send" && rawResult !== null) {
     throw new Error("Backup attempt result is invalid.");
   }
+  const timestamp = readOptionalIsoString(value, "timestamp");
+  const startedAt = readOptionalNullableIsoString(value, "startedAt");
+  const endedAt = readOptionalNullableIsoString(value, "endedAt") ?? timestamp ?? null;
+  const result = rawResult;
+  if (result !== "fail" && result !== "send" && result !== null) {
+    throw new Error("Backup attempt result is invalid.");
+  }
+  validateAttemptState(startedAt, endedAt, result);
+  const normalizedTimestamp = timestamp ?? endedAt ?? undefined;
   const attempt: Attempt = {
     id: readString(value, "id"),
     sessionId: readString(value, "sessionId"),
     climbId: readString(value, "climbId"),
-    timestamp: readIsoString(value, "timestamp"),
+    ...(normalizedTimestamp ? { timestamp: normalizedTimestamp } : {}),
+    startedAt,
+    endedAt,
     result,
     createdAt: readIsoString(value, "createdAt"),
   };
@@ -1015,6 +1497,17 @@ function readOptionalNullableString(record: Record<string, unknown>, key: string
   return value;
 }
 
+function readOptionalWallType(record: Record<string, unknown>, key: string): "gym" | "board" {
+  const value = record[key];
+  if (value === undefined || value === null) {
+    return "gym";
+  }
+  if (value !== "gym" && value !== "board") {
+    throw new Error(`Backup ${key} is invalid.`);
+  }
+  return value;
+}
+
 function readBoolean(record: Record<string, unknown>, key: string): boolean {
   const value = record[key];
   if (typeof value !== "boolean") {
@@ -1053,7 +1546,10 @@ function validateWallAngleValue(value: number): number {
   if (!Number.isFinite(value)) {
     throw new Error("Wall angle is invalid.");
   }
-  return value;
+  if (value < 0 || value > 180) {
+    throw new Error("Wall angle must be between 0 and 180 degrees.");
+  }
+  return Object.is(value, -0) ? 0 : value;
 }
 
 function readIsoString(record: Record<string, unknown>, key: string): string {
@@ -1077,8 +1573,19 @@ function readNullableIsoString(record: Record<string, unknown>, key: string): st
 
 function readOptionalIsoString(record: Record<string, unknown>, key: string): string | undefined {
   const value = record[key];
-  if (value === undefined) {
+  if (value === undefined || value === null) {
     return undefined;
+  }
+  if (typeof value !== "string" || !isIsoDate(value)) {
+    throw new Error(`Backup ${key} is invalid.`);
+  }
+  return value;
+}
+
+function readOptionalNullableIsoString(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  if (value === undefined || value === null) {
+    return null;
   }
   if (typeof value !== "string" || !isIsoDate(value)) {
     throw new Error(`Backup ${key} is invalid.`);

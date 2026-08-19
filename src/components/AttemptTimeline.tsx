@@ -1,9 +1,10 @@
 import { useState } from "react";
 import type { Attempt, Climb, Gym } from "../types/domain";
-import { getSessionAttemptIntervals, sortAttemptsByTimestampDesc } from "../utils/attempts";
+import { sortAttemptsByTimestampDesc } from "../utils/attempts";
 import { formatClimbLabel } from "../utils/climbs";
 import { effortLabels } from "../utils/effort";
 import { formatIntervalDuration, formatTime } from "../utils/time";
+import { buildSessionTimeline } from "../utils/timeline";
 
 type AttemptTimelineProps = {
   attempts: Attempt[];
@@ -17,7 +18,7 @@ export function AttemptTimeline({ attempts, climbs, gyms = [], onEdit }: Attempt
   const climbById = new Map(climbs.map((climb) => [climb.id, climb]));
   const gymById = new Map(gyms.map((gym) => [gym.id, gym]));
   const sortedAttempts = sortAttemptsByTimestampDesc(attempts);
-  const sessionIntervals = getSessionAttemptIntervals(attempts);
+  const timelineItems = [...buildSessionTimeline(attempts)].reverse();
 
   return (
     <section className="section timeline-section" aria-label="Timeline">
@@ -37,17 +38,26 @@ export function AttemptTimeline({ attempts, climbs, gyms = [], onEdit }: Attempt
 
       {isExpanded && (
         <div className="timeline-scroll">
-          {sortedAttempts.length === 0 ? (
+          {timelineItems.length === 0 ? (
             <p className="empty">Attempts will appear here.</p>
           ) : (
             <ol className="timeline">
-              {sortedAttempts.map((attempt) => {
+              {timelineItems.map((item) => {
+                if (item.type === "rest") {
+                  return (
+                    <li key={item.id} className="timeline-item rest-block">
+                      <div className="timeline-time">{formatTime(item.startedAt)}</div>
+                      <div className="timeline-rest-card">REST {formatIntervalDuration(item.durationMs)}</div>
+                    </li>
+                  );
+                }
+
+                const attempt = item.attempt;
                 const climb = climbById.get(attempt.climbId);
-                const intervalMs = sessionIntervals.get(attempt.id) ?? null;
 
                 return (
                   <li key={attempt.id} className="timeline-item">
-                    <div className="timeline-time">{formatTime(attempt.timestamp)}</div>
+                    <div className="timeline-time">{item.endedAt ? formatTime(item.endedAt) : "--"}</div>
                     <div>
                       <div className="timeline-title">
                         {climb ? (
@@ -62,16 +72,18 @@ export function AttemptTimeline({ attempts, climbs, gyms = [], onEdit }: Attempt
                           "Unknown climb"
                         )}
                       </div>
-                      <div className={`result-pill ${attempt.result}`}>
-                        {attempt.result.toUpperCase()}
+                      <div className={`result-pill ${attempt.result ?? "pending"}`}>
+                        {(attempt.result ?? "pending").toUpperCase()}
+                      </div>
+                      <div className="timeline-rest">
+                        Action {item.actionDurationMs === null ? "--" : formatIntervalDuration(item.actionDurationMs)}
+                      </div>
+                      <div className="timeline-rest">
+                        {item.startedAt ? `${formatTime(item.startedAt)}-` : "-- -"}
+                        {item.endedAt ? formatTime(item.endedAt) : "--"}
                       </div>
                       {attempt.effort !== undefined && (
                         <div className="timeline-effort">Effort: {effortLabels[attempt.effort]}</div>
-                      )}
-                      {intervalMs !== null && (
-                        <div className="timeline-rest">
-                          Interval from previous attempt: {formatIntervalDuration(intervalMs)}
-                        </div>
                       )}
                       {onEdit && (
                         <button className="edit-attempt-button" onClick={() => onEdit(attempt)}>

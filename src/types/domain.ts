@@ -8,7 +8,8 @@ export type Gym = {
 
 export type Grade = {
   id: string;
-  gymId: string;
+  gymId?: string | null;
+  boardId?: string | null;
   label: string;
   order: number;
   isArchived: boolean;
@@ -18,9 +19,18 @@ export type Grade = {
 
 export type WallAngle = {
   id: string;
-  gymId: string;
+  gymId?: string | null;
+  boardId?: string | null;
   angle: number;
   order: number;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type Board = {
+  id: string;
+  name: string;
+  isArchived: boolean;
   createdAt: string;
   updatedAt?: string;
 };
@@ -42,6 +52,9 @@ export type Climb = {
   gradeId?: string | null;
   wallAnglePresetId?: string | null;
   wallAngle?: number;
+  wallType?: "gym" | "board";
+  wallBoardId?: string | null;
+  wallLabel?: string | null;
   name: string | null;
   createdAt: string;
   updatedAt?: string;
@@ -55,10 +68,15 @@ export type Attempt = {
   sessionId: string;
   climbId: string;
   /**
-   * ISO 8601 timestamp for when the try is considered finished as a training event.
+   * Legacy end timestamp retained for timestamp-only backups and old UI compatibility.
    */
-  timestamp: string;
-  result: AttemptResult;
+  timestamp?: string;
+  /**
+   * New interval model. Legacy attempts have startedAt null and endedAt copied from timestamp.
+   */
+  startedAt: string | null;
+  endedAt: string | null;
+  result: AttemptResult | null;
   effort?: AttemptEffort;
   createdAt: string;
   updatedAt?: string;

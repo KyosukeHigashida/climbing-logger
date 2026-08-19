@@ -8,10 +8,12 @@ import {
   getActiveSession,
   getActiveGyms,
   getAllAttempts,
+  getAllGyms,
   getAllSessions,
   restoreAllData,
 } from "../db/repository";
 import { getAttemptCount } from "../utils/attempts";
+import { qaItems } from "../utils/qa";
 import { requestPersistentStorage } from "../utils/storage";
 import { formatSessionDuration, formatShortDate } from "../utils/time";
 
@@ -20,24 +22,32 @@ export function HomePage() {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
   const [selectedGymId, setSelectedGymId] = useState<string>("");
+  const [isQaOpen, setIsQaOpen] = useState(false);
   const sessions = useLiveQuery(() => getAllSessions(), []);
   const attempts = useLiveQuery(() => getAllAttempts(), []);
   const activeSession = useLiveQuery(() => getActiveSession(), []);
   const gyms = useLiveQuery(() => getActiveGyms(), []);
+  const allGyms = useLiveQuery(() => getAllGyms(), []);
 
   useEffect(() => {
     void requestPersistentStorage();
   }, []);
 
-  if (!sessions || !attempts || activeSession === undefined || !gyms) {
+  if (!sessions || !attempts || activeSession === undefined || !gyms || !allGyms) {
     return <main className="app-shell loading">Loading climbing log...</main>;
   }
 
   const completedSessions = sessions.filter((session) => session.endedAt !== null);
+  const gymById = new Map(allGyms.map((gym) => [gym.id, gym]));
 
   async function handleStartSession() {
+    if (!selectedGymId) {
+      window.alert("Select a gym before starting a session.");
+      return;
+    }
+
     try {
-      const session = await createSession(selectedGymId || null);
+      const session = await createSession(selectedGymId);
       navigate(`/session/${session.id}`);
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "Could not start session.");
@@ -92,8 +102,13 @@ export function HomePage() {
   return (
     <main className="app-shell">
       <header className="home-hero">
-        <p className="eyebrow">Bouldering tracker</p>
-        <h1>Climbing Log</h1>
+        <div>
+          <p className="eyebrow">Bouldering tracker</p>
+          <h1>Climbing Log</h1>
+        </div>
+        <button className="qa-button" onClick={() => setIsQaOpen(true)}>
+          Q&A
+        </button>
       </header>
 
       {activeSession ? (
@@ -115,7 +130,7 @@ export function HomePage() {
           <label>
             Gym
             <select value={selectedGymId} onChange={(event) => setSelectedGymId(event.target.value)}>
-              <option value="">No gym</option>
+              <option value="">Select Gym</option>
               {gyms.map((gym) => (
                 <option key={gym.id} value={gym.id}>
                   {gym.name}
@@ -127,8 +142,32 @@ export function HomePage() {
             START SESSION
           </button>
           <button className="secondary full manage-link-button" onClick={() => navigate("/gyms")}>
-            Manage Gyms
+            + Add Gym
           </button>
+          <button className="secondary full manage-link-button" onClick={() => navigate("/boards")}>
+            + Add Board
+          </button>
+        </section>
+      )}
+
+      {isQaOpen && (
+        <section className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Q&A">
+          <div className="modal-panel">
+            <div className="section-heading">
+              <h2>Q&A</h2>
+              <button className="small-text-action" onClick={() => setIsQaOpen(false)}>
+                Close
+              </button>
+            </div>
+            <div className="qa-list">
+              {qaItems.map((item) => (
+                <article key={item.id} className="qa-item">
+                  <h3>{item.question}</h3>
+                  <p>{item.answer}</p>
+                </article>
+              ))}
+            </div>
+          </div>
         </section>
       )}
 
@@ -140,6 +179,7 @@ export function HomePage() {
           <div className="session-list">
             {completedSessions.slice(0, 8).map((session) => {
               const attemptCount = getAttemptCount(attempts.filter((attempt) => attempt.sessionId === session.id));
+              const gymName = session.initialGymId ? gymById.get(session.initialGymId)?.name ?? "Unknown Gym" : "No Gym";
               return (
                 <button
                   className="session-row"
@@ -148,6 +188,7 @@ export function HomePage() {
                 >
                   <span>
                     <strong>{formatShortDate(session.startedAt)}</strong>
+                    <small>{gymName}</small>
                     <small>{formatSessionDuration(session.startedAt, session.endedAt)}</small>
                   </span>
                   <span className="muted">{attemptCount} attempts</span>

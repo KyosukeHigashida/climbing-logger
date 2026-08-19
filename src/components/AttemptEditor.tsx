@@ -2,7 +2,8 @@ import { type FormEvent, useState } from "react";
 import { EffortInput } from "./EffortInput";
 import type { Attempt, AttemptEffort, AttemptResult, Climb, Gym } from "../types/domain";
 import { formatClimbLabel } from "../utils/climbs";
-import { applyLocalTimeWithinRange, formatReadableDate, toTimeInputValue } from "../utils/time";
+import { formatReadableDate, fromDateTimeLocalValue, toDateTimeLocalValue } from "../utils/time";
+import { getAttemptEndTime } from "../utils/attempts";
 
 type AttemptEditorProps = {
   attempt: Attempt;
@@ -14,7 +15,13 @@ type AttemptEditorProps = {
   onDelete: (attemptId: string) => Promise<void>;
   onSave: (
     attemptId: string,
-    update: { result: AttemptResult; timestamp: string; climbId: string; effort?: AttemptEffort | null },
+    update: {
+      result: AttemptResult | null;
+      startedAt: string | null;
+      endedAt: string | null;
+      climbId: string;
+      effort?: AttemptEffort | null;
+    },
   ) => Promise<void>;
 };
 
@@ -28,9 +35,11 @@ export function AttemptEditor({
   onDelete,
   onSave,
 }: AttemptEditorProps) {
-  const [result, setResult] = useState<AttemptResult>(attempt.result);
-  const initialTime = toTimeInputValue(attempt.timestamp);
-  const [time, setTime] = useState(initialTime);
+  const [result, setResult] = useState<AttemptResult>(attempt.result ?? "fail");
+  const initialStartedAt = attempt.startedAt ? toDateTimeLocalValue(attempt.startedAt) : "";
+  const initialEndedAt = getAttemptEndTime(attempt) ? toDateTimeLocalValue(getAttemptEndTime(attempt) as string) : "";
+  const [startedAt, setStartedAt] = useState(initialStartedAt);
+  const [endedAt, setEndedAt] = useState(initialEndedAt);
   const [climbId, setClimbId] = useState(attempt.climbId);
   const [effort, setEffort] = useState<AttemptEffort>(attempt.effort ?? 4);
   const [hasEffort, setHasEffort] = useState(attempt.effort !== undefined);
@@ -46,10 +55,8 @@ export function AttemptEditor({
     try {
       await onSave(attempt.id, {
         result,
-        timestamp:
-          time === initialTime
-            ? attempt.timestamp
-            : applyLocalTimeWithinRange(attempt.timestamp, time, sessionStartedAt, sessionEndedAt),
+        startedAt: startedAt ? fromDateTimeLocalValue(startedAt) : null,
+        endedAt: endedAt ? fromDateTimeLocalValue(endedAt) : null,
         climbId,
         effort: hasEffort ? effort : null,
       });
@@ -95,15 +102,28 @@ export function AttemptEditor({
       </div>
       <label>
         Date
-        <div className="readonly-date">{formatReadableDate(attempt.timestamp)}</div>
+        <div className="readonly-date">{formatReadableDate(getAttemptEndTime(attempt) ?? attempt.createdAt)}</div>
       </label>
       <label>
-        Time
+        Start
         <input
           className="timestamp-input"
-          type="time"
-          value={time}
-          onChange={(event) => setTime(event.target.value)}
+          type="datetime-local"
+          min={toDateTimeLocalValue(sessionStartedAt)}
+          max={sessionEndedAt ? toDateTimeLocalValue(sessionEndedAt) : undefined}
+          value={startedAt}
+          onChange={(event) => setStartedAt(event.target.value)}
+        />
+      </label>
+      <label>
+        End
+        <input
+          className="timestamp-input"
+          type="datetime-local"
+          min={toDateTimeLocalValue(sessionStartedAt)}
+          max={sessionEndedAt ? toDateTimeLocalValue(sessionEndedAt) : undefined}
+          value={endedAt}
+          onChange={(event) => setEndedAt(event.target.value)}
         />
       </label>
       <label>

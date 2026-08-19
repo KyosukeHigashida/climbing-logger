@@ -88,8 +88,53 @@ h2 {
 }
 
 .home-hero {
-  display: block;
   padding-top: 18px;
+}
+
+.qa-button {
+  min-height: 34px;
+  padding: 0 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #dbe3d6;
+  font-size: 0.8rem;
+  font-weight: 850;
+}
+
+.modal-backdrop {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  align-items: end;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  background: rgba(0, 0, 0, 0.58);
+}
+
+.modal-panel {
+  width: min(100%, 520px);
+  max-height: min(78vh, 620px);
+  overflow-y: auto;
+  border: 1px solid rgba(212, 221, 209, 0.14);
+  border-radius: 8px;
+  padding: 16px;
+  background: #181f1b;
+}
+
+.qa-list {
+  display: grid;
+  gap: 12px;
+}
+
+.qa-item h3 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+}
+
+.qa-item p {
+  margin: 0;
+  color: #dbe3d6;
+  line-height: 1.55;
 }
 
 .eyebrow,
@@ -197,6 +242,68 @@ h2 {
   gap: 16px;
 }
 
+.current-climb-card {
+  display: grid;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid rgba(212, 221, 209, 0.2);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.current-climb-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(128px, 0.9fr);
+  gap: 10px;
+}
+
+.climb-action-card,
+.climb-stat-card {
+  border: 1px solid rgba(212, 221, 209, 0.14);
+  border-radius: 8px;
+  background: rgba(16, 23, 19, 0.56);
+}
+
+.climb-action-card {
+  display: grid;
+  align-content: center;
+  min-height: 146px;
+  padding: 12px;
+}
+
+.climb-start-button {
+  min-height: 108px;
+  width: 100%;
+  background: #2165c9;
+  color: #f8fbff;
+  font-size: 1.55rem;
+  letter-spacing: 0;
+}
+
+.climb-start-button:disabled {
+  opacity: 0.48;
+}
+
+.climb-stats-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.climb-stat-card {
+  min-height: 92px;
+  padding: 12px;
+}
+
+.climb-stat-card strong {
+  display: block;
+  margin-top: 8px;
+  color: #f4f7f1;
+  font-size: 2rem;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
 .current-grade-line {
   display: flex;
   flex-wrap: wrap;
@@ -291,6 +398,21 @@ h2 {
   color: #dbe3d6;
   font-size: 0.8rem;
   font-weight: 850;
+}
+
+.skip-effort-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #dbe3d6;
+  font-size: 0.85rem;
+  font-weight: 850;
+}
+
+.skip-effort-toggle input {
+  width: 18px;
+  height: 18px;
+  accent-color: #d7ff69;
 }
 
 .effort-input {
@@ -481,6 +603,131 @@ h2 {
   text-transform: none;
 }
 
+.venue-wall-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.venue-wall-panel strong {
+  display: block;
+  margin-top: 4px;
+}
+
+.editable-climb-card {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(212, 221, 209, 0.14);
+  border-radius: 8px;
+  background: rgba(16, 23, 19, 0.56);
+}
+
+.climb-field-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(108px, 0.95fr);
+  gap: 10px;
+}
+
+.editable-climb-card label,
+.venue-wall-panel label {
+  display: grid;
+  gap: 6px;
+  color: #aab5ab;
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.editable-climb-card select,
+.editable-climb-card input,
+.venue-wall-panel select {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  border: 1px solid rgba(212, 221, 209, 0.14);
+  border-radius: 8px;
+  padding: 0 10px;
+  background: #101713;
+  color: #f4f7f1;
+  font-size: 1rem;
+  text-transform: none;
+}
+
+.climb-card-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: #aab5ab;
+  font-size: 0.86rem;
+}
+
+.wall-angle-popover {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: 6px;
+  align-items: center;
+  margin-top: -4px;
+  padding: 8px;
+  border: 1px solid rgba(215, 244, 95, 0.22);
+  border-radius: 8px;
+  background: rgba(16, 23, 19, 0.94);
+}
+
+.wall-angle-popover input {
+  min-height: 38px;
+}
+
+.wall-angle-popover button {
+  min-height: 38px;
+  padding: 0 10px;
+  font-size: 0.82rem;
+}
+
+.climb-card-summary strong {
+  color: #f4f7f1;
+}
+
+.attempt-action-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 0;
+}
+
+.attempt-action-grid .full {
+  grid-column: 1 / -1;
+}
+
+.climb-action-card .attempt-action-grid .danger {
+  border: 1px solid rgba(255, 107, 95, 0.82);
+  background: rgba(255, 107, 95, 0.08);
+  color: #ff7f76;
+}
+
+.climb-action-card .attempt-action-grid .primary {
+  border: 1px solid rgba(104, 224, 162, 0.82);
+  background: rgba(104, 224, 162, 0.08);
+  color: #68e0a2;
+}
+
+.active-attempt-warning {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.active-attempt-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.active-attempt-actions button {
+  min-height: 40px;
+  padding: 0 8px;
+  font-size: 0.82rem;
+}
+
 .gym-list {
   display: grid;
   gap: 8px;
@@ -522,6 +769,20 @@ h2 {
 .compact-form {
   margin-top: 0;
   box-shadow: none;
+}
+
+.master-name-field {
+  display: grid;
+  gap: 6px;
+}
+
+.master-name-field label {
+  display: grid;
+  gap: 6px;
+  color: #aab5ab;
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-transform: uppercase;
 }
 
 .grade-heading {
@@ -568,6 +829,23 @@ h2 {
   min-width: 0;
   padding: 6px 8px;
   border-bottom: 1px solid rgba(212, 221, 209, 0.08);
+}
+
+.board-row {
+  grid-template-columns: 38px minmax(0, 1fr);
+}
+
+.board-actions {
+  display: grid;
+  grid-column: 2;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.board-actions button {
+  min-height: 36px;
+  padding: 0 6px;
+  font-size: 0.76rem;
 }
 
 .grade-row:last-child {
@@ -883,6 +1161,11 @@ h2 {
   border-bottom: 0;
 }
 
+.timeline-item.rest-block {
+  align-items: center;
+  padding-bottom: 8px;
+}
+
 .timeline-time {
   color: #aab5ab;
   font-weight: 800;
@@ -911,6 +1194,19 @@ h2 {
 
 .result-pill.send {
   background: #68e0a2;
+}
+
+.result-pill.pending {
+  background: #aab5ab;
+}
+
+.timeline-rest-card {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+  color: #aab5ab;
+  font-size: 0.86rem;
+  font-weight: 950;
 }
 
 .timeline-rest,
@@ -968,6 +1264,30 @@ h2 {
 
 .end-button {
   margin-top: 10px;
+}
+
+@media (max-width: 520px) {
+  .current-climb-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .climb-field-row {
+    grid-template-columns: minmax(0, 1fr) minmax(104px, 0.72fr);
+  }
+
+  .climb-action-card {
+    min-height: 0;
+  }
+
+  .climb-start-button {
+    min-height: 74px;
+  }
+}
+
+@media (max-width: 360px) {
+  .climb-field-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (min-width: 640px) {

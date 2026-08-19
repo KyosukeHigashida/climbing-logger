@@ -3,6 +3,9 @@ import { db } from "./db";
 import {
   archiveGrade,
   archiveGym,
+  createBoard,
+  createBoardGrade,
+  createBoardWallAngle,
   createAttempt,
   createAttemptForLoadedSessionClimb,
   createClimb,
@@ -10,6 +13,7 @@ import {
   createGym,
   createWallAngle,
   createSession,
+  cancelAttempt,
   deleteAttempt,
   deleteGrade,
   deleteGym,
@@ -17,17 +21,24 @@ import {
   deleteWallAngle,
   endSession,
   exportAllData,
+  finishAttempt,
+  getActiveAttempt,
   getActiveSession,
+  getBoardGrades,
+  getBoardWallAngles,
   getGymGrades,
   getGymWallAngles,
   getSessionAttempts,
   getSessionClimbs,
   moveGrade,
   reorderGrades,
+  replaceBoardGrades,
+  replaceBoardWallAngles,
   replaceGymGrades,
   replaceGymWallAngles,
   reopenSession,
   restoreAllData,
+  startAttempt,
   updateAttempt,
   updateAttemptEffort,
   updateClimb,
@@ -150,6 +161,52 @@ describe("repository", () => {
     expect(await getGymWallAngles(gym.id)).toEqual([]);
   });
 
+  it("adds duplicate wall angles idempotently and rejects impossible angle values", async () => {
+    const gym = await createGym("BETA");
+    const board = await createBoard("Kilter Board");
+
+    const gymAngle = await createWallAngle(gym.id, 120);
+    const duplicateGymAngle = await createWallAngle(gym.id, 120);
+    expect(duplicateGymAngle.id).toBe(gymAngle.id);
+    expect(await getGymWallAngles(gym.id)).toHaveLength(1);
+
+    const boardAngle = await createBoardWallAngle(board.id, 40);
+    const duplicateBoardAngle = await createBoardWallAngle(board.id, 40);
+    expect(duplicateBoardAngle.id).toBe(boardAngle.id);
+    expect(await getBoardWallAngles(board.id)).toHaveLength(1);
+
+    await expect(createWallAngle(gym.id, -1)).rejects.toThrow("Wall angle must be between 0 and 180 degrees.");
+    await expect(createWallAngle(gym.id, 181)).rejects.toThrow("Wall angle must be between 0 and 180 degrees.");
+    await expect(createBoardWallAngle(board.id, Number.NaN)).rejects.toThrow("Wall angle is invalid.");
+  });
+
+  it("loads board grade and wall angle presets as editable board master data", async () => {
+    const board = await createBoard("Kilter Board");
+
+    await replaceBoardGrades(board.id, gradePresets["v-grade"].labels);
+    let grades = await getBoardGrades(board.id);
+    expect(grades.map((grade) => grade.label)).toEqual(gradePresets["v-grade"].labels);
+    expect(grades[0]).toMatchObject({ boardId: board.id, gymId: null });
+
+    await updateGrade(grades[0].id, "V0+");
+    grades = await getBoardGrades(board.id);
+    expect(grades[0].label).toBe("V0+");
+
+    await replaceBoardWallAngles(board.id, anglePresets["board-5"].angles);
+    let wallAngles = await getBoardWallAngles(board.id);
+    expect(wallAngles.map((angle) => angle.angle)).toEqual(anglePresets["board-5"].angles);
+    expect(wallAngles[0]).toMatchObject({ boardId: board.id, gymId: null });
+
+    await updateWallAngle(wallAngles[0].id, 22);
+    wallAngles = await getBoardWallAngles(board.id);
+    expect(wallAngles[0].angle).toBe(22);
+
+    const customGrade = await createBoardGrade(board.id, "Custom");
+    const customAngle = await createBoardWallAngle(board.id, 47);
+    expect((await getBoardGrades(board.id)).map((grade) => grade.id)).toContain(customGrade.id);
+    expect((await getBoardWallAngles(board.id)).map((angle) => angle.id)).toContain(customAngle.id);
+  });
+
   it("validates climb gym and grade relationships at repository level", async () => {
     const gymA = await createGym("BETA");
     const gymB = await createGym("Kilter Board");
@@ -210,6 +267,56 @@ describe("repository", () => {
     });
   });
 
+  it("keeps existing climb wall angle snapshots after the master angle is deleted", async () => {
+    const gym = await createGym("BETA");
+    const [grade] = await replaceGymGrades(gym.id, ["2Q"]);
+    const [wallAngle] = await replaceGymWallAngles(gym.id, [120]);
+    const session = await createSession(gym.id);
+    const climb = await createClimb(session.id, grade.label, "Yellow", gym.id, grade.id, wallAngle.angle, wallAngle.id);
+
+    await deleteWallAngle(wallAngle.id);
+    await updateClimb(climb.id, "2Q", "Yellow renamed", gym.id, grade.id, 120, wallAngle.id);
+
+    expect(await db.climbs.get(climb.id)).toMatchObject({
+      name: "Yellow renamed",
+      wallAnglePresetId: wallAngle.id,
+      wallAngle: 120,
+    });
+  });
+
+  it("stores board grade and wall angle snapshots on climbs", async () => {
+    const gym = await createGym("BETA");
+    const board = await createBoard("Kilter Board");
+    const [grade] = await replaceBoardGrades(board.id, ["V4"]);
+    const [wallAngle] = await replaceBoardWallAngles(board.id, [40]);
+    const session = await createSession(gym.id);
+
+    const climb = await createClimb(
+      session.id,
+      grade.label,
+      "Board climb",
+      gym.id,
+      grade.id,
+      wallAngle.angle,
+      wallAngle.id,
+      "board",
+      board.id,
+    );
+
+    await updateGrade(grade.id, "V4+");
+    await updateWallAngle(wallAngle.id, 45);
+
+    expect(await db.climbs.get(climb.id)).toMatchObject({
+      grade: "V4",
+      gradeId: grade.id,
+      wallType: "board",
+      wallBoardId: board.id,
+      wallLabel: "Kilter Board",
+      wallAnglePresetId: wallAngle.id,
+      wallAngle: 40,
+    });
+  });
+
   it("creates an attempt only when session and climb belong together", async () => {
     setNow("2026-08-17T09:00:00.000Z");
     const sessionA = await createSession();
@@ -259,6 +366,60 @@ describe("repository", () => {
     await expect(
       createAttemptForLoadedSessionClimb({ ...session, endedAt: "2026-08-17T09:10:00.000Z" }, climb, "fail"),
     ).rejects.toThrow("Cannot create an attempt for an ended session.");
+  });
+
+  it("runs the START to FAIL/SEND attempt state machine", async () => {
+    setNow("2026-08-17T18:00:00.000Z");
+    const session = await createSession();
+    const climb = await createClimb(session.id, "2Q", "A");
+
+    const first = await startAttempt(session.id, climb.id);
+    expect(first).toMatchObject({
+      sessionId: session.id,
+      climbId: climb.id,
+      startedAt: "2026-08-17T18:00:00.000Z",
+      endedAt: null,
+      result: null,
+    });
+    expect((await getActiveAttempt(session.id))?.id).toBe(first.id);
+
+    setNow("2026-08-17T18:00:45.000Z");
+    await finishAttempt(first.id, "fail");
+    expect(await db.attempts.get(first.id)).toMatchObject({
+      startedAt: "2026-08-17T18:00:00.000Z",
+      endedAt: "2026-08-17T18:00:45.000Z",
+      timestamp: "2026-08-17T18:00:45.000Z",
+      result: "fail",
+    });
+    expect(await getActiveAttempt(session.id)).toBeNull();
+
+    setNow("2026-08-17T18:05:00.000Z");
+    const second = await startAttempt(session.id, climb.id);
+    setNow("2026-08-17T18:05:30.000Z");
+    await finishAttempt(second.id, "send");
+
+    expect(await db.attempts.get(second.id)).toMatchObject({
+      startedAt: "2026-08-17T18:05:00.000Z",
+      endedAt: "2026-08-17T18:05:30.000Z",
+      result: "send",
+    });
+  });
+
+  it("allows only one active attempt, supports cancel, and blocks session end while active", async () => {
+    setNow("2026-08-17T18:00:00.000Z");
+    const session = await createSession();
+    const climbA = await createClimb(session.id, "2Q", "A");
+    const climbB = await createClimb(session.id, "3Q", "B");
+
+    const active = await startAttempt(session.id, climbA.id);
+    await expect(startAttempt(session.id, climbB.id)).rejects.toThrow("Finish or cancel the active attempt first.");
+    await expect(endSession(session.id)).rejects.toThrow("Finish or cancel the active attempt first.");
+
+    await cancelAttempt(active.id);
+    expect(await db.attempts.get(active.id)).toBeUndefined();
+    expect(await getActiveAttempt(session.id)).toBeNull();
+
+    await expect(startAttempt(session.id, climbB.id)).resolves.toMatchObject({ climbId: climbB.id });
   });
 
   it("stores optional effort values, supports clearing them, and rejects out-of-range effort", async () => {
@@ -357,6 +518,8 @@ describe("repository", () => {
       sessionId: endedSession.id,
       climbId: "ended-climb",
       timestamp: "2026-08-17T18:30:00.000Z",
+      startedAt: null,
+      endedAt: "2026-08-17T18:30:00.000Z",
       result: "fail",
       createdAt: "2026-08-17T18:30:00.000Z",
     });
@@ -395,6 +558,8 @@ describe("repository", () => {
       sessionId: overnightSession.id,
       climbId: "overnight-climb",
       timestamp: "2026-08-18T00:10:00.000Z",
+      startedAt: null,
+      endedAt: "2026-08-18T00:10:00.000Z",
       result: "fail",
       createdAt: "2026-08-18T00:10:00.000Z",
     });
@@ -570,9 +735,10 @@ describe("repository", () => {
     const exportedClimb = exported.climbs.find((item) => item.id === climb.id);
     const exportedAttempt = exported.attempts.find((item) => item.id === attempt.id);
 
-    expect(exported.schemaVersion).toBe(5);
+    expect(exported.schemaVersion).toBe(7);
     expect(exported.exportedAt).toBe("2026-08-17T09:01:00.000Z");
     expect(exported.gyms).toHaveLength(0);
+    expect(exported.boards).toHaveLength(0);
     expect(exported.grades).toHaveLength(0);
     expect(exported.wallAngles).toHaveLength(0);
     expect(exported.sessions).toHaveLength(1);
@@ -745,8 +911,9 @@ describe("repository", () => {
       attempts: [],
     });
 
-    expect(legacy.schemaVersion).toBe(5);
+    expect(legacy.schemaVersion).toBe(7);
     expect(legacy.gyms).toEqual([]);
+    expect(legacy.boards).toEqual([]);
     expect(legacy.grades).toEqual([]);
     expect(legacy.wallAngles).toEqual([]);
     expect(legacy.sessions[0].initialGymId).toBeNull();
@@ -754,8 +921,8 @@ describe("repository", () => {
     expect(legacy.climbs[0].wallAngle).toBeUndefined();
   });
 
-  it("opens schema version 5 and reads old records without updatedAt, gym fields, effort, or wall angle", async () => {
-    expect(db.verno).toBe(5);
+  it("opens schema version 7 and reads old records without updatedAt, gym fields, effort, or wall angle", async () => {
+    expect(db.verno).toBe(7);
 
     const oldSession: Session = {
       id: "old-session",

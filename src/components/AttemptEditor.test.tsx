@@ -9,6 +9,8 @@ const attempt: Attempt = {
   sessionId: "session-a",
   climbId: "climb-a",
   timestamp: "2026-08-17T09:23:00.000Z",
+  startedAt: "2026-08-17T09:22:00.000Z",
+  endedAt: "2026-08-17T09:23:00.000Z",
   result: "fail",
   createdAt: "2026-08-17T09:23:00.000Z",
 };
@@ -31,7 +33,7 @@ const climbs: Climb[] = [
 ];
 
 describe("AttemptEditor", () => {
-  it("shows a read-only date, one editable time input, and editable result", async () => {
+  it("shows a read-only date, editable interval inputs, and editable result", async () => {
     const user = userEvent.setup();
     const onSave = vi.fn().mockResolvedValue(undefined);
 
@@ -48,9 +50,10 @@ describe("AttemptEditor", () => {
     );
 
     expect(container.querySelectorAll('input[type="date"]')).toHaveLength(0);
-    expect(container.querySelectorAll('input[type="time"]')).toHaveLength(1);
+    expect(container.querySelectorAll('input[type="datetime-local"]')).toHaveLength(2);
     expect(screen.getByText("Date")).toBeInTheDocument();
-    expect(screen.getByText("Time")).toBeInTheDocument();
+    expect(screen.getByText("Start")).toBeInTheDocument();
+    expect(screen.getByText("End")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "SEND" }));
     await user.click(screen.getByRole("button", { name: "Save" }));
@@ -60,7 +63,8 @@ describe("AttemptEditor", () => {
       expect.objectContaining({
         result: "send",
         climbId: "climb-a",
-        timestamp: "2026-08-17T09:23:00.000Z",
+        startedAt: "2026-08-17T09:22:00.000Z",
+        endedAt: "2026-08-17T09:23:00.000Z",
       }),
     );
   });

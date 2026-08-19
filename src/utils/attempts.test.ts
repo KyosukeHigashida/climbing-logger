@@ -19,6 +19,8 @@ function attempt(id: string, climbId: string, timestamp: string, result: "fail" 
     sessionId: "session-a",
     climbId,
     timestamp,
+    startedAt: timestamp,
+    endedAt: timestamp,
     result,
     createdAt: timestamp,
   };
