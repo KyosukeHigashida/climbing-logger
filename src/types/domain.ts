@@ -41,6 +41,9 @@ export type Session = {
   startedAt: string;
   endedAt: string | null;
   initialGymId?: string | null;
+  sessionRpe?: number | null;
+  performance?: number | null;
+  memo?: string | null;
   createdAt: string;
   updatedAt?: string;
 };

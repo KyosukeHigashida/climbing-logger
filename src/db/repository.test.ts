@@ -45,6 +45,7 @@ import {
   updateAttemptEffort,
   updateClimb,
   updateGrade,
+  updateSessionReview,
   updateWallAngle,
   validateDataExport,
 } from "./repository";
@@ -854,6 +855,72 @@ describe("repository", () => {
     expect(snapshot?.climbs.map((climb) => climb.id)).toEqual([firstClimb.id, secondClimb.id]);
   });
 
+  it("saves, edits, and clears optional session review fields without changing session timing", async () => {
+    setNow("2026-08-17T09:00:00.000Z");
+    const session = await createSession();
+    setNow("2026-08-17T11:00:00.000Z");
+    await endSession(session.id);
+    const endedSession = await db.sessions.get(session.id);
+
+    setNow("2026-08-17T11:05:00.000Z");
+    const reviewed = await updateSessionReview(session.id, {
+      sessionRpe: 0,
+      performance: 1,
+      memo: "Heavy warm-up, good finish.",
+    });
+
+    expect(reviewed).toMatchObject({
+      sessionRpe: 0,
+      performance: 1,
+      memo: "Heavy warm-up, good finish.",
+      updatedAt: "2026-08-17T11:05:00.000Z",
+    });
+    expect(reviewed.startedAt).toBe(session.startedAt);
+    expect(reviewed.endedAt).toBe(endedSession?.endedAt);
+
+    setNow("2026-08-17T11:10:00.000Z");
+    const edited = await updateSessionReview(session.id, {
+      sessionRpe: 10,
+      performance: 5,
+      memo: "",
+    });
+    expect(edited.sessionRpe).toBe(10);
+    expect(edited.performance).toBe(5);
+    expect(edited.memo).toBeNull();
+
+    const cleared = await updateSessionReview(session.id, {
+      sessionRpe: null,
+      performance: null,
+      memo: null,
+    });
+    expect(cleared.sessionRpe).toBeNull();
+    expect(cleared.performance).toBeNull();
+    expect(cleared.memo).toBeNull();
+  });
+
+  it("rejects invalid session review values", async () => {
+    const session = await createSession();
+
+    await expect(updateSessionReview(session.id, { sessionRpe: -1 })).rejects.toThrow(
+      "Session RPE must be an integer between 0 and 10.",
+    );
+    await expect(updateSessionReview(session.id, { sessionRpe: 11 })).rejects.toThrow(
+      "Session RPE must be an integer between 0 and 10.",
+    );
+    await expect(updateSessionReview(session.id, { sessionRpe: 4.5 })).rejects.toThrow(
+      "Session RPE must be an integer between 0 and 10.",
+    );
+    await expect(updateSessionReview(session.id, { performance: 0 })).rejects.toThrow(
+      "Performance must be an integer between 1 and 5.",
+    );
+    await expect(updateSessionReview(session.id, { performance: 6 })).rejects.toThrow(
+      "Performance must be an integer between 1 and 5.",
+    );
+    await expect(updateSessionReview(session.id, { performance: 2.5 })).rejects.toThrow(
+      "Performance must be an integer between 1 and 5.",
+    );
+  });
+
   it("exports complete raw data including attempt timestamps and audit fields", async () => {
     setNow("2026-08-17T09:00:00.000Z");
     const session = await createSession();
@@ -868,12 +935,18 @@ describe("repository", () => {
       effort: 6,
       note: "Right foot slipped",
     });
+    await updateSessionReview(session.id, {
+      sessionRpe: 7,
+      performance: 4,
+      memo: "Felt better after the second warm-up climb.",
+    });
 
     const exported = await exportAllData();
+    const exportedSession = exported.sessions.find((item) => item.id === session.id);
     const exportedClimb = exported.climbs.find((item) => item.id === climb.id);
     const exportedAttempt = exported.attempts.find((item) => item.id === attempt.id);
 
-    expect(exported.schemaVersion).toBe(10);
+    expect(exported.schemaVersion).toBe(11);
     expect(exported.exportedAt).toBe("2026-08-17T09:01:00.000Z");
     expect(exported.gyms).toHaveLength(0);
     expect(exported.boards).toHaveLength(0);
@@ -882,6 +955,11 @@ describe("repository", () => {
     expect(exported.sessions).toHaveLength(1);
     expect(exported.climbs).toHaveLength(1);
     expect(exported.attempts).toHaveLength(1);
+    expect(exportedSession).toMatchObject({
+      sessionRpe: 7,
+      performance: 4,
+      memo: "Felt better after the second warm-up climb.",
+    });
     expect(exportedClimb?.wallAngle).toBe(120);
     expect(exportedClimb?.memo).toBe("Hold right shoulder low");
     expect(exportedAttempt).toMatchObject({
@@ -938,6 +1016,9 @@ describe("repository", () => {
           startedAt: "2026-08-17T10:00:00.000Z",
           endedAt: null,
           initialGymId: "gym-restored",
+          sessionRpe: 8,
+          performance: 4,
+          memo: "Restored review",
           createdAt: "2026-08-17T10:00:00.000Z",
         },
       ],
@@ -975,7 +1056,11 @@ describe("repository", () => {
     expect(restored.wallAngles).toHaveLength(1);
     expect(restored.sessions).toHaveLength(1);
     expect(await db.sessions.get(oldSession.id)).toBeUndefined();
-    expect(await db.sessions.get("session-restored")).toBeTruthy();
+    expect(await db.sessions.get("session-restored")).toMatchObject({
+      sessionRpe: 8,
+      performance: 4,
+      memo: "Restored review",
+    });
     expect(await db.gyms.get("gym-restored")).toBeTruthy();
     expect(await db.grades.get("grade-restored")).toBeTruthy();
     expect(await db.wallAngles.get("angle-restored")).toMatchObject({
@@ -1026,6 +1111,50 @@ describe("repository", () => {
         ],
       }),
     ).rejects.toThrow("Backup contains an attempt for a missing climb.");
+
+    expect(() =>
+      validateDataExport({
+        schemaVersion: 11,
+        exportedAt: "2026-08-18T00:00:00.000Z",
+        gyms: [],
+        boards: [],
+        grades: [],
+        wallAngles: [],
+        sessions: [
+          {
+            id: "session-a",
+            startedAt: "2026-08-17T10:00:00.000Z",
+            endedAt: null,
+            sessionRpe: -1,
+            createdAt: "2026-08-17T10:00:00.000Z",
+          },
+        ],
+        climbs: [],
+        attempts: [],
+      }),
+    ).toThrow("Session RPE must be an integer between 0 and 10.");
+
+    expect(() =>
+      validateDataExport({
+        schemaVersion: 11,
+        exportedAt: "2026-08-18T00:00:00.000Z",
+        gyms: [],
+        boards: [],
+        grades: [],
+        wallAngles: [],
+        sessions: [
+          {
+            id: "session-a",
+            startedAt: "2026-08-17T10:00:00.000Z",
+            endedAt: null,
+            performance: 6,
+            createdAt: "2026-08-17T10:00:00.000Z",
+          },
+        ],
+        climbs: [],
+        attempts: [],
+      }),
+    ).toThrow("Performance must be an integer between 1 and 5.");
   });
 
   it("restores legacy schema version 2 backups without guessing gyms or grades", async () => {
@@ -1052,12 +1181,15 @@ describe("repository", () => {
       attempts: [],
     });
 
-    expect(legacy.schemaVersion).toBe(10);
+    expect(legacy.schemaVersion).toBe(11);
     expect(legacy.gyms).toEqual([]);
     expect(legacy.boards).toEqual([]);
     expect(legacy.grades).toEqual([]);
     expect(legacy.wallAngles).toEqual([]);
     expect(legacy.sessions[0].initialGymId).toBeNull();
+    expect(legacy.sessions[0].sessionRpe).toBeUndefined();
+    expect(legacy.sessions[0].performance).toBeUndefined();
+    expect(legacy.sessions[0].memo).toBeUndefined();
     expect(legacy.climbs[0]).toMatchObject({ grade: "2Q", gymId: null, gradeId: null, wallAnglePresetId: null });
     expect(legacy.climbs[0].wallAngle).toBeUndefined();
   });

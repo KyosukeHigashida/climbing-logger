@@ -3,7 +3,7 @@ import type { Attempt, AttemptEffort, AttemptResult, Board, Climb, Grade, Gym, S
 import { generateId } from "../utils/id";
 import { nowIso } from "../utils/time";
 
-const CURRENT_SCHEMA_VERSION = 10;
+const CURRENT_SCHEMA_VERSION = 11;
 
 export type DataExport = {
   schemaVersion: number;
@@ -53,6 +53,12 @@ export type ClimbUpdate = {
   wallType?: "gym" | "board";
   wallBoardId?: string | null;
   wallLabel?: string | null;
+  memo?: string | null;
+};
+
+export type SessionReviewUpdate = {
+  sessionRpe?: number | null;
+  performance?: number | null;
   memo?: string | null;
 };
 
@@ -618,6 +624,30 @@ export async function reopenSession(sessionId: string): Promise<void> {
   await db.sessions.update(sessionId, { endedAt: null, updatedAt: nowIso() });
 }
 
+export async function updateSessionReview(sessionId: string, update: SessionReviewUpdate): Promise<Session> {
+  const session = await db.sessions.get(sessionId);
+  if (!session) {
+    throw new Error("Session does not exist.");
+  }
+
+  const updatedAt = nowIso();
+  const changes: Pick<Session, "sessionRpe" | "performance" | "memo" | "updatedAt"> = {
+    sessionRpe:
+      update.sessionRpe === undefined
+        ? session.sessionRpe ?? null
+        : validateOptionalIntegerRange(update.sessionRpe, "Session RPE", 0, 10),
+    performance:
+      update.performance === undefined
+        ? session.performance ?? null
+        : validateOptionalIntegerRange(update.performance, "Performance", 1, 5),
+    memo: update.memo === undefined ? session.memo ?? null : normalizeOptionalText(update.memo),
+    updatedAt,
+  };
+
+  await db.sessions.update(sessionId, changes);
+  return { ...session, ...changes };
+}
+
 export async function deleteSession(sessionId: string): Promise<void> {
   const session = await db.sessions.get(sessionId);
   if (!session) {
@@ -1060,7 +1090,8 @@ export function validateDataExport(data: unknown): DataExport {
     data.schemaVersion !== 7 &&
     data.schemaVersion !== 8 &&
     data.schemaVersion !== 9 &&
-    data.schemaVersion !== 10
+    data.schemaVersion !== 10 &&
+    data.schemaVersion !== 11
   ) {
     throw new Error("Unsupported backup schema version.");
   }
@@ -1698,6 +1729,18 @@ function validateSession(value: unknown): Session {
     initialGymId: readOptionalNullableString(value, "initialGymId"),
     createdAt: readIsoString(value, "createdAt"),
   };
+  const sessionRpe = readOptionalNullableNumber(value, "sessionRpe");
+  if (sessionRpe !== undefined) {
+    session.sessionRpe = validateOptionalIntegerRange(sessionRpe, "Session RPE", 0, 10);
+  }
+  const performance = readOptionalNullableNumber(value, "performance");
+  if (performance !== undefined) {
+    session.performance = validateOptionalIntegerRange(performance, "Performance", 1, 5);
+  }
+  const memo = readOptionalNullableString(value, "memo");
+  if (memo !== null || Object.prototype.hasOwnProperty.call(value, "memo")) {
+    session.memo = normalizeOptionalText(memo);
+  }
   const updatedAt = readOptionalIsoString(value, "updatedAt");
   if (updatedAt) {
     session.updatedAt = updatedAt;
@@ -1852,6 +1895,30 @@ function readOptionalNumber(record: Record<string, unknown>, key: string): numbe
   }
   if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new Error(`Backup ${key} is invalid.`);
+  }
+  return value;
+}
+
+function readOptionalNullableNumber(record: Record<string, unknown>, key: string): number | null | undefined {
+  const value = record[key];
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null) {
+    return null;
+  }
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`Backup ${key} is invalid.`);
+  }
+  return value;
+}
+
+function validateOptionalIntegerRange(value: number | null, label: string, min: number, max: number): number | null {
+  if (value === null) {
+    return null;
+  }
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new Error(`${label} must be an integer between ${min} and ${max}.`);
   }
   return value;
 }
