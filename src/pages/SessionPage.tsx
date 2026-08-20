@@ -705,13 +705,14 @@ function EditableClimbCard({
   const wallAngleSelectValue = getWallAngleSelectValue(draft.wallAnglePresetId, draft.wallAngle, angleOptions);
   const gradeDisplay = gradeOptions.find((grade) => grade.id === gradeSelectValue)?.label ?? "Select";
   const wallAngleDisplay = angleOptions.find((angle) => angle.id === wallAngleSelectValue)?.label ?? "No angle";
+  const hasGradeValue = gradeSelectValue !== "";
+  const hasWallAngleValue = draft.wallAngle !== null;
   const wallDisplay = getWallDisplayName(draft, boards);
   return (
     <div className="editable-climb-card">
       <div className="climb-field-row">
         <label className="select-chip climb-field-grade">
-          <span className="select-chip-label">Grade</span>
-          <strong>{gradeDisplay}</strong>
+          <strong className={hasGradeValue ? "grade-value" : "chip-placeholder"}>{hasGradeValue ? gradeDisplay : "Select Grade"}</strong>
           <select
             value={gradeSelectValue}
             onChange={(event) => {
@@ -730,9 +731,8 @@ function EditableClimbCard({
             ))}
           </select>
         </label>
-        <label className="select-chip climb-field-angle">
-          <span className="select-chip-label">Wall angle</span>
-          <strong>{wallAngleDisplay}</strong>
+        <label className="select-chip climb-field-angle angle-chip">
+          <strong className={hasWallAngleValue ? "angle-value" : undefined}>{wallAngleDisplay}</strong>
           <select
             value={wallAngleSelectValue}
             onChange={(event) => {
@@ -765,16 +765,14 @@ function EditableClimbCard({
         </label>
       </div>
       <label className="climb-text-chip">
-        <span className="select-chip-label">Name / Number</span>
         <input
           key={climb.id}
           value={draft.name}
-          placeholder="Yellow #12"
+          placeholder="Name / Number"
           onChange={(event) => onDraftChange({ name: event.target.value })}
         />
       </label>
       <div className="select-chip readonly-chip">
-        <span className="select-chip-label">Wall</span>
         <strong>{wallDisplay}</strong>
       </div>
       {isAddingWallAngle && (

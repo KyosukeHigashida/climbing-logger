@@ -731,7 +731,7 @@ h2 {
 
 .climb-field-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr) minmax(104px, 0.42fr);
   gap: 10px;
 }
 
@@ -748,7 +748,6 @@ h2 {
 .climb-text-chip {
   position: relative;
   display: grid;
-  gap: 8px;
   min-width: 0;
   min-height: 82px;
   align-content: center;
@@ -759,21 +758,38 @@ h2 {
   overflow: hidden;
 }
 
-.select-chip-label {
-  color: #aab5ab;
-  font-size: 0.78rem;
-  font-weight: 850;
-  text-transform: uppercase;
-}
-
 .select-chip strong,
 .climb-text-chip input {
   min-width: 0;
   color: #f4f7f1;
-  font-size: 1.35rem;
+  font-size: 1.6rem;
   font-weight: 950;
   line-height: 1.05;
   text-transform: none;
+}
+
+.select-chip strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.angle-chip strong {
+  font-size: 1.15rem;
+}
+
+.angle-chip strong.angle-value {
+  font-size: clamp(1.65rem, 7vw, 2.3rem);
+}
+
+.select-chip strong.grade-value {
+  font-size: clamp(2rem, 11vw, 3.2rem);
+}
+
+.select-chip strong.chip-placeholder,
+.climb-text-chip input::placeholder {
+  color: rgba(170, 181, 171, 0.62);
+  font-weight: 650;
 }
 
 .select-chip select {
@@ -788,7 +804,20 @@ h2 {
 }
 
 .readonly-chip {
+  min-height: 44px;
+  padding-block: 6px;
   cursor: default;
+}
+
+.readonly-chip strong {
+  color: #aab5ab;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.climb-text-chip {
+  min-height: 58px;
+  padding-block: 10px;
 }
 
 .venue-wall-panel select {
@@ -811,7 +840,7 @@ h2 {
   border: 0;
   padding: 0;
   background: transparent;
-  font-size: 1.35rem;
+  font-size: 1.6rem;
   outline: none;
 }
 
@@ -1485,7 +1514,7 @@ h2 {
   }
 
   .climb-field-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr) minmax(96px, 0.46fr);
   }
 
   .climb-action-card {
