@@ -176,6 +176,27 @@ export function SessionPage() {
     setClimbDraft(selectedClimbForDraft ? createClimbDraft(selectedClimbForDraft) : null);
   }, [selectedClimbForDraft?.id]);
 
+  useEffect(() => {
+    const nextWallDraft = getWallDraftFromSelection(wallSelection, boards);
+    setClimbDraft((current) => {
+      if (
+        !current ||
+        (current.wallType === nextWallDraft.wallType &&
+          current.wallBoardId === nextWallDraft.wallBoardId &&
+          current.wallLabel === nextWallDraft.wallLabel)
+      ) {
+        return current;
+      }
+      return {
+        ...current,
+        ...nextWallDraft,
+        gradeId: null,
+        wallAngle: null,
+        wallAnglePresetId: null,
+      };
+    });
+  }, [boards, selectedClimbForDraft?.id, wallSelection.wallBoardId, wallSelection.wallType]);
+
   const currentClimb = climbs.find((climb) => climb.id === currentClimbId) ?? null;
   const currentClimbAttemptCount = currentClimb ? getAttemptCount(attempts, currentClimb.id) : 0;
   const shouldStartNewClimb =
@@ -300,8 +321,8 @@ export function SessionPage() {
     setError(null);
     try {
       const sourceClimb = currentClimb ?? orderedClimbs[0] ?? null;
-      const sourceWallType = sourceClimb?.wallType ?? wallSelection.wallType;
-      const sourceWallBoardId = sourceClimb ? sourceClimb.wallBoardId ?? null : wallSelection.wallBoardId;
+      const sourceWallType = wallSelection.wallType;
+      const sourceWallBoardId = wallSelection.wallBoardId;
       const sourceGrades =
         sourceWallType === "board" && sourceWallBoardId
           ? (grades ?? []).filter((grade) => grade.boardId === sourceWallBoardId && !grade.isArchived).sort((a, b) => a.order - b.order)
@@ -332,7 +353,6 @@ export function SessionPage() {
         sourceWallBoardId,
         null,
       );
-      setStoreCurrentWallSelection({ wallType: sourceWallType, wallBoardId: sourceWallBoardId });
       upsertClimb(climb);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add climb.");
@@ -345,6 +365,10 @@ export function SessionPage() {
       return;
     }
     setError(null);
+    const selectedClimb = climbs.find((climb) => climb.id === climbId) ?? null;
+    if (selectedClimb) {
+      setStoreCurrentWallSelection(getWallSelectionForClimb(selectedClimb));
+    }
     setStoreCurrentClimbId(climbId);
   }
 
@@ -381,7 +405,7 @@ export function SessionPage() {
             climbDraft.wallAnglePresetId,
             climbDraft.wallType,
             climbDraft.wallBoardId,
-            normalizeDraftMemo(climbDraft.memo),
+            null,
           );
           targetClimbId = nextClimb.id;
           upsertClimb(nextClimb);
@@ -514,7 +538,7 @@ export function SessionPage() {
 
       <section className="panel current-climb">
         <div className="section-heading">
-          <p className="label">Current Climb</p>
+          <p className="current-climb-title">Current Climb</p>
           {shouldStartNewClimb && <p className="muted compact new-climb-hint">Changes will start a new climb.</p>}
         </div>
         {currentClimb ? (
@@ -533,13 +557,13 @@ export function SessionPage() {
                   onError={setError}
                 />
               )}
-              <div className="climb-stats-layout climb-stats-stack">
+              <div className="climb-stats-layout">
                 <div className="climb-stat-card">
                   <span className="metric-label">Attempts</span>
                   <strong>{getAttemptCount(attempts, currentClimb.id)}</strong>
                 </div>
                 <div className="climb-stat-card">
-                  <span className="metric-label">{currentClimbActiveAttempt ? "Action" : "Rest"}</span>
+                  <span className="metric-label">Interval</span>
                   <strong>
                     {currentClimbActiveAttempt?.startedAt ? (
                       <IntervalTimer since={currentClimbActiveAttempt.startedAt} />
@@ -675,16 +699,19 @@ function EditableClimbCard({
 }) {
   const [newWallAngle, setNewWallAngle] = useState("");
   const [isAddingWallAngle, setIsAddingWallAngle] = useState(false);
-  const currentWallValue = draft.wallType === "board" && draft.wallBoardId ? `board:${draft.wallBoardId}` : "gym";
   const gradeOptions = getGradeOptionsForSelect(draft.gradeId, draft.grade, grades);
   const gradeSelectValue = getGradeSelectValue(draft.gradeId, draft.grade, gradeOptions);
   const angleOptions = getWallAngleOptionsForSelect(draft.wallAnglePresetId, draft.wallAngle, wallAngles);
   const wallAngleSelectValue = getWallAngleSelectValue(draft.wallAnglePresetId, draft.wallAngle, angleOptions);
+  const gradeDisplay = gradeOptions.find((grade) => grade.id === gradeSelectValue)?.label ?? "Select";
+  const wallAngleDisplay = angleOptions.find((angle) => angle.id === wallAngleSelectValue)?.label ?? "No angle";
+  const wallDisplay = getWallDisplayName(draft, boards);
   return (
     <div className="editable-climb-card">
       <div className="climb-field-row">
-        <label className="climb-field-grade">
-          Grade
+        <label className="select-chip climb-field-grade">
+          <span className="select-chip-label">Grade</span>
+          <strong>{gradeDisplay}</strong>
           <select
             value={gradeSelectValue}
             onChange={(event) => {
@@ -703,8 +730,9 @@ function EditableClimbCard({
             ))}
           </select>
         </label>
-        <label className="climb-field-angle">
-          Wall angle
+        <label className="select-chip climb-field-angle">
+          <span className="select-chip-label">Wall angle</span>
+          <strong>{wallAngleDisplay}</strong>
           <select
             value={wallAngleSelectValue}
             onChange={(event) => {
@@ -736,8 +764,8 @@ function EditableClimbCard({
           </select>
         </label>
       </div>
-      <label>
-        Name / Number
+      <label className="climb-text-chip">
+        <span className="select-chip-label">Name / Number</span>
         <input
           key={climb.id}
           value={draft.name}
@@ -745,43 +773,10 @@ function EditableClimbCard({
           onChange={(event) => onDraftChange({ name: event.target.value })}
         />
       </label>
-      <label>
-        Wall
-        <select
-          value={currentWallValue}
-          onChange={(event) => {
-            if (event.target.value === "gym") {
-              onDraftChange({
-                wallType: "gym",
-                wallBoardId: null,
-                wallLabel: "Gym Wall",
-                gradeId: null,
-                wallAngle: null,
-                wallAnglePresetId: null,
-              });
-              return;
-            }
-            const boardId = event.target.value.replace("board:", "");
-            const board = boards.find((item) => item.id === boardId) ?? null;
-            onDraftChange({
-              wallType: "board",
-              wallBoardId: boardId,
-              wallLabel: board?.name ?? null,
-              gradeId: null,
-              wallAngle: null,
-              wallAnglePresetId: null,
-            });
-          }}
-        >
-          <option value="gym">Gym Wall</option>
-          {boards.length > 0 && <option disabled>────────</option>}
-          {boards.map((board) => (
-            <option key={board.id} value={`board:${board.id}`}>
-              {board.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      <div className="select-chip readonly-chip">
+        <span className="select-chip-label">Wall</span>
+        <strong>{wallDisplay}</strong>
+      </div>
       {isAddingWallAngle && (
         <form
           className="wall-angle-popover"
@@ -854,6 +849,37 @@ function createClimbDraft(climb: Climb): ClimbDraft {
     wallLabel: climb.wallLabel ?? null,
     memo: climb.memo ?? "",
   };
+}
+
+function getWallDraftFromSelection(wallSelection: WallSelection, boards: Board[]): Pick<ClimbDraft, "wallType" | "wallBoardId" | "wallLabel"> {
+  if (wallSelection.wallType === "board" && wallSelection.wallBoardId) {
+    const board = boards.find((item) => item.id === wallSelection.wallBoardId) ?? null;
+    return {
+      wallType: "board",
+      wallBoardId: wallSelection.wallBoardId,
+      wallLabel: board?.name ?? null,
+    };
+  }
+
+  return {
+    wallType: "gym",
+    wallBoardId: null,
+    wallLabel: "Gym Wall",
+  };
+}
+
+function getWallSelectionForClimb(climb: Climb): WallSelection {
+  return {
+    wallType: climb.wallType ?? "gym",
+    wallBoardId: climb.wallType === "board" ? climb.wallBoardId ?? null : null,
+  };
+}
+
+function getWallDisplayName(draft: ClimbDraft, boards: Board[]): string {
+  if (draft.wallType === "board" && draft.wallBoardId) {
+    return draft.wallLabel ?? boards.find((board) => board.id === draft.wallBoardId)?.name ?? "Board";
+  }
+  return "Gym Wall";
 }
 
 function normalizeDraftName(name: string): string | null {
