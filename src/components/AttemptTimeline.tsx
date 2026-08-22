@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Attempt, Climb, Gym } from "../types/domain";
+import type { Attempt, Climb, Gym, StrengthSet } from "../types/domain";
 import { sortAttemptsByTimestampDesc } from "../utils/attempts";
 import { formatClimbLabel } from "../utils/climbs";
 import { effortLabels } from "../utils/effort";
@@ -8,17 +8,19 @@ import { buildSessionTimeline } from "../utils/timeline";
 
 type AttemptTimelineProps = {
   attempts: Attempt[];
+  strengthSets?: StrengthSet[];
   climbs: Climb[];
   gyms?: Gym[];
   onEdit?: (attempt: Attempt) => void;
 };
 
-export function AttemptTimeline({ attempts, climbs, gyms = [], onEdit }: AttemptTimelineProps) {
+export function AttemptTimeline({ attempts, strengthSets = [], climbs, gyms = [], onEdit }: AttemptTimelineProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   const climbById = new Map(climbs.map((climb) => [climb.id, climb]));
   const gymById = new Map(gyms.map((gym) => [gym.id, gym]));
   const sortedAttempts = sortAttemptsByTimestampDesc(attempts);
-  const timelineItems = [...buildSessionTimeline(attempts)].reverse();
+  const timelineItems = [...buildSessionTimeline(attempts, strengthSets)].reverse();
+  const actionCount = sortedAttempts.length + strengthSets.filter((set) => set.endedAt !== null).length;
 
   return (
     <section className="section timeline-section" aria-label="Timeline">
@@ -29,7 +31,7 @@ export function AttemptTimeline({ attempts, climbs, gyms = [], onEdit }: Attempt
         onClick={() => setIsExpanded((current) => !current)}
       >
         <span>
-          Timeline <small>· {sortedAttempts.length}</small>
+          Timeline <small>· {actionCount}</small>
         </span>
         <span className="timeline-chevron" aria-hidden="true">
           {isExpanded ? "⌃" : "⌄"}
@@ -52,6 +54,24 @@ export function AttemptTimeline({ attempts, climbs, gyms = [], onEdit }: Attempt
                   );
                 }
 
+                if (item.type === "strength") {
+                  const set = item.set;
+                  return (
+                    <li key={set.id} className="timeline-item">
+                      <div className="timeline-time">{formatTime(item.endedAt)}</div>
+                      <div>
+                        <div className="timeline-title">{set.name}</div>
+                        <div className="timeline-rest">Action {formatIntervalDuration(item.actionDurationMs)}</div>
+                        <div className="timeline-rest">
+                          {formatTime(item.startedAt)}-{formatTime(item.endedAt)}
+                        </div>
+                        <div className="timeline-effort">{formatStrengthTimelineMeta(set)}</div>
+                        {set.memo && <div className="timeline-note">{set.memo}</div>}
+                      </div>
+                    </li>
+                  );
+                }
+
                 const attempt = item.attempt;
                 const climb = climbById.get(attempt.climbId);
 
@@ -60,20 +80,22 @@ export function AttemptTimeline({ attempts, climbs, gyms = [], onEdit }: Attempt
                     <div className="timeline-time">{item.endedAt ? formatTime(item.endedAt) : "--"}</div>
                     <div>
                       <div className="timeline-title">
-                        {climb ? (
-                          <>
-                            {formatClimbLabel(climb)}
-                            {climb.name ? ` ${climb.name}` : ""}
-                            {climb.gymId && gymById.get(climb.gymId) ? (
-                              <small className="climb-venue">{gymById.get(climb.gymId)?.name}</small>
-                            ) : null}
-                          </>
-                        ) : (
-                          "Unknown climb"
-                        )}
-                      </div>
-                      <div className={`result-pill ${attempt.result ?? "pending"}`}>
-                        {(attempt.result ?? "pending").toUpperCase()}
+                        <span className="timeline-title-main">
+                          {climb ? (
+                            <>
+                              {formatClimbLabel(climb)}
+                              {climb.name ? ` ${climb.name}` : ""}
+                              {climb.gymId && gymById.get(climb.gymId) ? (
+                                <small className="climb-venue">{gymById.get(climb.gymId)?.name}</small>
+                              ) : null}
+                            </>
+                          ) : (
+                            "Unknown climb"
+                          )}
+                        </span>
+                        <span className={`result-pill ${attempt.result ?? "pending"}`}>
+                          {(attempt.result ?? "pending").toUpperCase()}
+                        </span>
                       </div>
                       <div className="timeline-rest">
                         Action {item.actionDurationMs === null ? "--" : formatIntervalDuration(item.actionDurationMs)}
@@ -101,4 +123,22 @@ export function AttemptTimeline({ attempts, climbs, gyms = [], onEdit }: Attempt
       )}
     </section>
   );
+}
+
+function formatStrengthTimelineMeta(set: StrengthSet): string {
+  const parts: string[] = [];
+  if (set.weight !== null && set.weight !== undefined && set.reps !== null && set.reps !== undefined) {
+    parts.push(`${set.weight} kg`, `${set.reps} reps`);
+  } else if (set.weight !== null && set.weight !== undefined) {
+    parts.push(`${set.weight} kg`);
+  } else if (set.reps !== null && set.reps !== undefined) {
+    parts.push(`${set.reps} reps`);
+  }
+  if (set.workDurationSeconds !== null && set.workDurationSeconds !== undefined) {
+    parts.push(`${set.workDurationSeconds} sec`);
+  }
+  if (set.effort !== null && set.effort !== undefined) {
+    parts.push(`Effort ${set.effort}`);
+  }
+  return parts.join(", ");
 }

@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from "dexie";
-import type { Attempt, Board, Climb, Grade, Gym, Session, WallAngle } from "../types/domain";
+import type { Attempt, Board, Climb, Grade, Gym, Session, StrengthSet, WallAngle } from "../types/domain";
 
 export const db = new Dexie("climbingLogger") as Dexie & {
   gyms: EntityTable<Gym, "id">;
@@ -9,6 +9,7 @@ export const db = new Dexie("climbingLogger") as Dexie & {
   sessions: EntityTable<Session, "id">;
   climbs: EntityTable<Climb, "id">;
   attempts: EntityTable<Attempt, "id">;
+  strengthSets: EntityTable<StrengthSet, "id">;
 };
 
 db.version(1).stores({
@@ -136,3 +137,16 @@ db.version(8)
       climb.wallAnglePresetId = matchingAngle?.id ?? null;
     });
   });
+
+db.version(9).stores({
+  gyms: "id, name, isArchived, createdAt, updatedAt",
+  boards: "id, name, isArchived, createdAt, updatedAt",
+  grades: "id, gymId, boardId, order, isArchived, createdAt, updatedAt",
+  wallAngles: "id, gymId, boardId, order, angle, isArchived, createdAt, updatedAt",
+  sessions: "id, startedAt, endedAt, initialGymId, createdAt, updatedAt",
+  climbs:
+    "id, sessionId, gymId, gradeId, wallAnglePresetId, wallType, wallBoardId, wallAngle, createdAt, updatedAt",
+  attempts:
+    "id, sessionId, climbId, startedAt, endedAt, result, timestamp, effort, createdAt, updatedAt",
+  strengthSets: "id, sessionId, startedAt, endedAt, createdAt, updatedAt",
+});

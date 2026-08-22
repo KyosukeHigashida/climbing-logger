@@ -67,6 +67,7 @@ export type Climb = {
 
 export type AttemptResult = "fail" | "send";
 export type AttemptEffort = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+export type EffortRating = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 export type Attempt = {
   id: string;
@@ -84,6 +85,21 @@ export type Attempt = {
   result: AttemptResult | null;
   effort?: AttemptEffort;
   note?: string | null;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type StrengthSet = {
+  id: string;
+  sessionId: string;
+  name: string;
+  startedAt: string;
+  endedAt: string | null;
+  weight?: number | null;
+  reps?: number | null;
+  workDurationSeconds?: number | null;
+  effort?: EffortRating | null;
+  memo?: string | null;
   createdAt: string;
   updatedAt?: string;
 };

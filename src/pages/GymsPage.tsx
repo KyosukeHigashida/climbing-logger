@@ -38,6 +38,7 @@ import {
   updateWallAngle,
 } from "../db/repository";
 import type { Board, Grade, Gym, WallAngle } from "../types/domain";
+import { parseOptionalNumericInput } from "../utils/numericInput";
 import { anglePresets, type AnglePresetId, gradePresets, type GradePresetId } from "../utils/presets";
 
 export function GymsPage() {
@@ -145,7 +146,7 @@ export function GymsPage() {
           <input
             value={newGymName}
             onChange={(event) => setNewGymName(event.target.value)}
-            placeholder={isBoardMode ? "Kilter Board" : "BETA"}
+            placeholder={isBoardMode ? "Board name" : "Gym name"}
           />
           <button type="submit">{isBoardMode ? "+ Add Board" : "+ Add Gym"}</button>
         </form>
@@ -157,8 +158,6 @@ export function GymsPage() {
           gym={selectedGym}
           grades={grades}
           wallAngles={wallAngles}
-          sessionUseCount={sessions.filter((session) => session.initialGymId === selectedGym.id).length}
-          climbUseCount={climbs.filter((climb) => climb.gymId === selectedGym.id).length}
           onGradeChanged={upsertGrade}
           onGradeRemoved={removeGrade}
           onWallAngleChanged={upsertWallAngle}
@@ -173,7 +172,6 @@ export function GymsPage() {
           board={selectedBoard}
           grades={grades}
           wallAngles={wallAngles}
-          climbUseCount={climbs.filter((climb) => climb.wallBoardId === selectedBoard.id).length}
           onGradeChanged={upsertGrade}
           onGradeRemoved={removeGrade}
           onWallAngleChanged={upsertWallAngle}
@@ -190,8 +188,6 @@ type GymEditorProps = {
   gym: Gym;
   grades: Grade[];
   wallAngles: WallAngle[];
-  sessionUseCount: number;
-  climbUseCount: number;
   onGradeChanged: (grade: Grade) => void;
   onGradeRemoved: (gradeId: string) => void;
   onWallAngleChanged: (wallAngle: WallAngle) => void;
@@ -203,7 +199,6 @@ type BoardEditorProps = {
   board: Board;
   grades: Grade[];
   wallAngles: WallAngle[];
-  climbUseCount: number;
   onGradeChanged: (grade: Grade) => void;
   onGradeRemoved: (gradeId: string) => void;
   onWallAngleChanged: (wallAngle: WallAngle) => void;
@@ -216,7 +211,6 @@ function BoardEditor({
   board,
   grades,
   wallAngles,
-  climbUseCount,
   onGradeChanged,
   onGradeRemoved,
   onWallAngleChanged,
@@ -291,11 +285,7 @@ function BoardEditor({
         wallAngles
           .filter((angle) => (angleValues[angle.id] ?? angle.angle.toString()).trim() !== angle.angle.toString())
           .map((angle) => {
-            const nextValue = (angleValues[angle.id] ?? angle.angle.toString()).trim();
-            const parsedAngle = Number(nextValue);
-            if (!nextValue || !Number.isFinite(parsedAngle)) {
-              throw new Error("Wall angle must be a number.");
-            }
+            const parsedAngle = parseWallAngleInput(angleValues[angle.id] ?? angle.angle.toString());
             return updateWallAngle(angle.id, parsedAngle);
           }),
       );
@@ -342,10 +332,7 @@ function BoardEditor({
   async function handleAddAngle(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
-      const parsedAngle = Number(newAngleValue.trim());
-      if (!newAngleValue.trim() || !Number.isFinite(parsedAngle)) {
-        throw new Error("Wall angle must be a number.");
-      }
+      const parsedAngle = parseWallAngleInput(newAngleValue);
       const wallAngle = await createBoardWallAngle(board.id, parsedAngle);
       onWallAngleChanged(wallAngle);
       setNewAngleValue("");
@@ -528,7 +515,7 @@ function BoardEditor({
         )}
       </div>
       <form className="inline-form" onSubmit={handleAddGrade}>
-        <input value={newGradeLabel} onChange={(event) => setNewGradeLabel(event.target.value)} placeholder="V4 or 2Q" />
+        <input value={newGradeLabel} onChange={(event) => setNewGradeLabel(event.target.value)} placeholder="Grade label" />
         <button type="submit">+ Add Grade</button>
       </form>
 
@@ -572,7 +559,7 @@ function BoardEditor({
         )}
       </div>
       <form className="inline-form" onSubmit={handleAddAngle}>
-        <input inputMode="decimal" value={newAngleValue} onChange={(event) => setNewAngleValue(event.target.value)} placeholder="40" />
+        <input inputMode="decimal" value={newAngleValue} onChange={(event) => setNewAngleValue(event.target.value)} placeholder="Wall angle" />
         <button type="submit">+ Add Angle</button>
       </form>
 
@@ -588,7 +575,6 @@ function BoardEditor({
         <button className="danger subtle-danger full" onClick={handleDeleteBoard}>
           Delete Unused Board
         </button>
-        <p className="muted">References: {climbUseCount} climbs</p>
       </div>
     </section>
   );
@@ -598,8 +584,6 @@ function GymEditor({
   gym,
   grades,
   wallAngles,
-  sessionUseCount,
-  climbUseCount,
   onGradeChanged,
   onGradeRemoved,
   onWallAngleChanged,
@@ -673,11 +657,7 @@ function GymEditor({
         wallAngles
           .filter((angle) => (angleValues[angle.id] ?? angle.angle.toString()).trim() !== angle.angle.toString())
           .map((angle) => {
-            const nextValue = (angleValues[angle.id] ?? angle.angle.toString()).trim();
-            const parsedAngle = Number(nextValue);
-            if (!nextValue || !Number.isFinite(parsedAngle)) {
-              throw new Error("Wall angle must be a number.");
-            }
+            const parsedAngle = parseWallAngleInput(angleValues[angle.id] ?? angle.angle.toString());
             return updateWallAngle(angle.id, parsedAngle);
           }),
       );
@@ -727,10 +707,7 @@ function GymEditor({
   async function handleAddAngle(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
-      const parsedAngle = Number(newAngleValue.trim());
-      if (!newAngleValue.trim() || !Number.isFinite(parsedAngle)) {
-        throw new Error("Wall angle must be a number.");
-      }
+      const parsedAngle = parseWallAngleInput(newAngleValue);
       const wallAngle = await createWallAngle(gym.id, parsedAngle);
       onWallAngleChanged(wallAngle);
       setNewAngleValue("");
@@ -922,7 +899,7 @@ function GymEditor({
         <input
           value={newGradeLabel}
           onChange={(event) => setNewGradeLabel(event.target.value)}
-          placeholder="V4 or 2Q"
+          placeholder="Grade label"
         />
         <button type="submit">+ Add Grade</button>
       </form>
@@ -971,7 +948,7 @@ function GymEditor({
           inputMode="decimal"
           value={newAngleValue}
           onChange={(event) => setNewAngleValue(event.target.value)}
-          placeholder="120"
+          placeholder="Wall angle"
         />
         <button type="submit">+ Add Angle</button>
       </form>
@@ -988,9 +965,6 @@ function GymEditor({
         <button className="danger subtle-danger full" onClick={handleDeleteGym}>
           Delete Unused Gym
         </button>
-        <p className="muted">
-          References: {sessionUseCount} initial sessions, {climbUseCount} climbs
-        </p>
       </div>
     </section>
   );
@@ -1174,4 +1148,8 @@ function AngleRow({
       )}
     </div>
   );
+}
+
+function parseWallAngleInput(value: string): number {
+  return parseOptionalNumericInput(value, { label: "Wall angle", required: true, min: 0, max: 180 }) ?? 0;
 }

@@ -101,6 +101,21 @@ h2 {
   font-weight: 850;
 }
 
+.scroll-top-button {
+  position: fixed;
+  right: max(14px, env(safe-area-inset-right));
+  bottom: max(18px, env(safe-area-inset-bottom));
+  z-index: 15;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid rgba(212, 221, 209, 0.18);
+  background: rgba(16, 23, 19, 0.92);
+  color: #d7f45f;
+  font-size: 0.86rem;
+  font-weight: 900;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
+}
+
 .modal-backdrop {
   position: fixed;
   z-index: 20;
@@ -317,6 +332,77 @@ h2 {
 
 .climb-bottom-action .climb-start-button {
   min-height: 76px;
+}
+
+.activity-switch,
+.activity-filter {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.activity-filter {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0 0 10px;
+}
+
+.activity-switch button,
+.activity-filter button {
+  min-height: 42px;
+  padding: 0 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #dbe3d6;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.activity-switch button.selected,
+.activity-filter button.selected {
+  background: #d7f45f;
+  color: #15180e;
+}
+
+.current-training-card {
+  display: grid;
+  gap: 12px;
+}
+
+.training-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.training-name-chip {
+  grid-column: 1 / -1;
+}
+
+.training-input-chip {
+  min-height: 76px;
+  padding: 10px;
+}
+
+.training-input-chip input {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: #f4f7f1;
+  font-size: 1.35rem;
+  font-weight: 900;
+  outline: none;
+}
+
+.training-progress {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 12px;
+}
+
+.training-progress strong {
+  font-size: 2rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .climb-memo-field {
@@ -737,7 +823,7 @@ h2 {
 
 .climb-field-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(104px, 0.42fr);
+  grid-template-columns: minmax(0, 1fr) minmax(118px, 0.5fr);
   gap: 10px;
 }
 
@@ -781,7 +867,7 @@ h2 {
 }
 
 .angle-chip strong {
-  font-size: 1.15rem;
+  font-size: clamp(1rem, 4.4vw, 1.25rem);
 }
 
 .angle-chip strong.angle-value {
@@ -983,7 +1069,7 @@ h2 {
 }
 
 .grade-heading {
-  margin-top: 16px;
+  margin-top: 14px;
 }
 
 .preset-loader {
@@ -1012,7 +1098,7 @@ h2 {
 .grade-table {
   display: grid;
   overflow: hidden;
-  margin-top: 12px;
+  margin-top: 8px;
   border: 1px solid rgba(212, 221, 209, 0.12);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.035);
@@ -1020,11 +1106,11 @@ h2 {
 
 .grade-row {
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) 42px;
+  grid-template-columns: 30px minmax(0, 1fr) 34px;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
-  padding: 6px 8px;
+  padding: 4px 6px;
   border-bottom: 1px solid rgba(212, 221, 209, 0.08);
 }
 
@@ -1054,24 +1140,24 @@ h2 {
 }
 
 .drag-handle {
-  width: 34px;
-  min-height: 38px;
+  width: 28px;
+  min-height: 32px;
   padding: 0;
   background: rgba(255, 255, 255, 0.08);
   color: #aab5ab;
   cursor: grab;
-  font-size: 1rem;
+  font-size: 0.86rem;
   font-weight: 900;
   touch-action: none;
 }
 
 .grade-menu-button {
-  width: 40px;
-  min-height: 38px;
+  width: 32px;
+  min-height: 32px;
   padding: 0;
   background: rgba(255, 255, 255, 0.08);
   color: #dbe3d6;
-  font-size: 1rem;
+  font-size: 0.9rem;
   font-weight: 950;
 }
 
@@ -1089,7 +1175,7 @@ h2 {
 }
 
 .grade-actions button {
-  min-height: 38px;
+  min-height: 34px;
   padding: 0 8px;
   background: rgba(255, 255, 255, 0.08);
   color: #f4f7f1;
@@ -1108,6 +1194,31 @@ h2 {
 
 .compact-angle-input {
   grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.gym-editor .inline-form {
+  margin-top: 8px;
+}
+
+.gym-editor .inline-form input,
+.gym-editor .grade-row input {
+  min-height: 36px;
+  padding: 0 10px;
+  font-size: 0.92rem;
+}
+
+.gym-editor .inline-form button {
+  min-height: 36px;
+  padding: 0 10px;
+  font-size: 0.82rem;
+}
+
+.gym-editor .angle-input-row {
+  gap: 6px;
+}
+
+.gym-editor .angle-input-row span {
+  font-size: 0.95rem;
 }
 
 .grade-status {
@@ -1297,31 +1408,47 @@ h2 {
 
 .climb-row {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: stretch;
-  gap: 8px;
   width: 100%;
-  min-height: 58px;
-  padding: 6px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.055);
 }
 
 .climb-row.selected {
-  outline: 2px solid #d7f45f;
-  background: rgba(215, 244, 95, 0.11);
+  outline: none;
 }
 
 .climb-select {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  min-height: 50px;
-  padding: 6px;
-  background: transparent;
+  gap: 10px;
+  width: 100%;
+  min-height: 54px;
+  padding: 10px 12px;
+  border: 1px solid rgba(212, 221, 209, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
   color: #f4f7f1;
   text-align: left;
+}
+
+.climb-row.selected .climb-select {
+  border-color: rgba(215, 244, 95, 0.44);
+  background: rgba(215, 244, 95, 0.1);
+}
+
+.climb-select > span:first-child {
+  min-width: 0;
+}
+
+.climb-select strong,
+.climb-select small {
+  overflow-wrap: anywhere;
+}
+
+.climb-select .muted {
+  flex: 0 0 auto;
+  text-align: right;
 }
 
 .edit-action {
@@ -1337,6 +1464,42 @@ h2 {
   display: block;
   margin-top: 4px;
   color: #aab5ab;
+}
+
+.recent-sessions-section {
+  padding: 0;
+  overflow: hidden;
+}
+
+.collapsible-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 12px;
+}
+
+.collapsible-heading .timeline-header {
+  flex: 1;
+}
+
+.recent-sessions-title-button {
+  justify-content: flex-start;
+}
+
+.collapsible-heading .small-text-action {
+  min-width: 52px;
+}
+
+.recent-sessions-toggle {
+  border: 0;
+  background: rgba(255, 255, 255, 0.08);
+  color: #dbe3d6;
+  font-weight: 900;
+}
+
+.recent-sessions-section > .empty,
+.recent-sessions-section > .session-list {
+  margin: 0 16px 16px;
 }
 
 .timeline-section {
@@ -1421,8 +1584,16 @@ h2 {
 }
 
 .timeline-title {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 6px;
   margin-bottom: 8px;
   font-weight: 850;
+}
+
+.timeline-title-main {
+  min-width: 0;
 }
 
 .result-pill {
@@ -1520,7 +1691,7 @@ h2 {
   }
 
   .climb-field-row {
-    grid-template-columns: minmax(0, 1fr) minmax(96px, 0.46fr);
+    grid-template-columns: minmax(0, 1fr) minmax(112px, 0.52fr);
   }
 
   .climb-action-card {

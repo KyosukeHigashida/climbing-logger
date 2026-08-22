@@ -153,7 +153,7 @@ export function AttemptEditor({
           Memo
           <textarea
             value={note}
-            placeholder="Slip, beta, why it failed..."
+            placeholder="Attempt memo"
             onChange={(event) => setNote(event.target.value)}
           />
         </label>

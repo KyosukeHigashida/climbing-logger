@@ -14,6 +14,7 @@ import {
   createWallAngle,
   createSession,
   cancelAttempt,
+  cancelStrengthSet,
   deleteAttempt,
   deleteGrade,
   deleteGym,
@@ -22,8 +23,10 @@ import {
   endSession,
   exportAllData,
   finishAttempt,
+  finishStrengthSet,
   getActiveAttempt,
   getActiveSession,
+  getActiveStrengthSet,
   getBoardGrades,
   getBoardWallAngles,
   getGymGrades,
@@ -41,11 +44,14 @@ import {
   reopenSession,
   restoreAllData,
   startAttempt,
+  startStrengthSet,
   updateAttempt,
   updateAttemptEffort,
   updateClimb,
   updateGrade,
   updateSessionReview,
+  updateStrengthSet,
+  updateStrengthSetMetadata,
   updateWallAngle,
   validateDataExport,
 } from "./repository";
@@ -748,6 +754,52 @@ describe("repository", () => {
     });
   });
 
+  it("starts, updates, finishes, and annotates strength sets", async () => {
+    const session = await createSession();
+    const set = await startStrengthSet(session.id, { name: "Weighted Pull-up", weight: 10, reps: 5, workDurationSeconds: null });
+
+    expect(set).toMatchObject({
+      sessionId: session.id,
+      name: "Weighted Pull-up",
+      weight: 10,
+      reps: 5,
+      endedAt: null,
+    });
+    expect((await getActiveStrengthSet(session.id))?.id).toBe(set.id);
+
+    const updated = await updateStrengthSet(set.id, { weight: 12.5, reps: 4, workDurationSeconds: 20 });
+    expect(updated).toMatchObject({ id: set.id, weight: 12.5, reps: 4, workDurationSeconds: 20 });
+
+    const finished = await finishStrengthSet(set.id);
+    expect(finished.endedAt).toBeTruthy();
+    expect(await getActiveStrengthSet(session.id)).toBeNull();
+
+    const annotated = await updateStrengthSetMetadata(set.id, 6, "Solid set");
+    expect(annotated).toMatchObject({ effort: 6, memo: "Solid set" });
+  });
+
+  it("cancels active strength sets", async () => {
+    const session = await createSession();
+    const set = await startStrengthSet(session.id, { name: "Front Lever" });
+
+    await cancelStrengthSet(set.id);
+
+    expect(await db.strengthSets.get(set.id)).toBeUndefined();
+  });
+
+  it("prevents simultaneous active attempts and strength sets", async () => {
+    const session = await createSession();
+    const climb = await createClimb(session.id, "2Q", "A");
+    const activeAttempt = await startAttempt(session.id, climb.id);
+
+    await expect(startStrengthSet(session.id, { name: "Weighted Pull-up" })).rejects.toThrow("Finish or cancel the active attempt first.");
+    await finishAttempt(activeAttempt.id, "fail");
+
+    const activeSet = await startStrengthSet(session.id, { name: "Weighted Pull-up" });
+    await expect(startAttempt(session.id, climb.id)).rejects.toThrow("Finish or cancel the active strength set first.");
+    await finishStrengthSet(activeSet.id);
+  });
+
   it("deletes only the target attempt and derived values recalculate from remaining raw attempts", async () => {
     setNow("2026-08-17T09:00:00.000Z");
     const session = await createSession();
@@ -950,6 +1002,9 @@ describe("repository", () => {
     const session = await createSession();
     const climb = await createClimb(session.id, "2Q", "A", null, null, 120, null, "gym", null, "Hold right shoulder low");
     const attempt = await createAttempt(session.id, climb.id, "fail");
+    const strengthSet = await startStrengthSet(session.id, { name: "Weighted Pull-up", weight: 10, reps: 5 });
+    await finishStrengthSet(strengthSet.id);
+    await updateStrengthSetMetadata(strengthSet.id, 6, "Good pull");
 
     setNow("2026-08-17T09:01:00.000Z");
     await updateAttempt(attempt.id, {
@@ -969,8 +1024,9 @@ describe("repository", () => {
     const exportedSession = exported.sessions.find((item) => item.id === session.id);
     const exportedClimb = exported.climbs.find((item) => item.id === climb.id);
     const exportedAttempt = exported.attempts.find((item) => item.id === attempt.id);
+    const exportedStrengthSet = exported.strengthSets.find((item) => item.id === strengthSet.id);
 
-    expect(exported.schemaVersion).toBe(11);
+    expect(exported.schemaVersion).toBe(12);
     expect(exported.exportedAt).toBe("2026-08-17T09:01:00.000Z");
     expect(exported.gyms).toHaveLength(0);
     expect(exported.boards).toHaveLength(0);
@@ -979,6 +1035,7 @@ describe("repository", () => {
     expect(exported.sessions).toHaveLength(1);
     expect(exported.climbs).toHaveLength(1);
     expect(exported.attempts).toHaveLength(1);
+    expect(exported.strengthSets).toHaveLength(1);
     expect(exportedSession).toMatchObject({
       sessionRpe: 7,
       performance: 4,
@@ -995,6 +1052,14 @@ describe("repository", () => {
       note: "Right foot slipped",
       createdAt: "2026-08-17T09:00:00.000Z",
       updatedAt: "2026-08-17T09:01:00.000Z",
+    });
+    expect(exportedStrengthSet).toMatchObject({
+      sessionId: session.id,
+      name: "Weighted Pull-up",
+      weight: 10,
+      reps: 5,
+      effort: 6,
+      memo: "Good pull",
     });
   });
 
@@ -1079,6 +1144,7 @@ describe("repository", () => {
     expect(restored.grades).toHaveLength(1);
     expect(restored.wallAngles).toHaveLength(1);
     expect(restored.sessions).toHaveLength(1);
+    expect(restored.strengthSets).toHaveLength(0);
     expect(await db.sessions.get(oldSession.id)).toBeUndefined();
     expect(await db.sessions.get("session-restored")).toMatchObject({
       sessionRpe: 8,
@@ -1138,7 +1204,7 @@ describe("repository", () => {
 
     expect(() =>
       validateDataExport({
-        schemaVersion: 11,
+        schemaVersion: 12,
         exportedAt: "2026-08-18T00:00:00.000Z",
         gyms: [],
         boards: [],
@@ -1155,12 +1221,13 @@ describe("repository", () => {
         ],
         climbs: [],
         attempts: [],
+        strengthSets: [],
       }),
     ).toThrow("Session RPE must be an integer between 0 and 10.");
 
     expect(() =>
       validateDataExport({
-        schemaVersion: 11,
+        schemaVersion: 12,
         exportedAt: "2026-08-18T00:00:00.000Z",
         gyms: [],
         boards: [],
@@ -1177,6 +1244,7 @@ describe("repository", () => {
         ],
         climbs: [],
         attempts: [],
+        strengthSets: [],
       }),
     ).toThrow("Performance must be an integer between 1 and 5.");
   });
@@ -1205,11 +1273,12 @@ describe("repository", () => {
       attempts: [],
     });
 
-    expect(legacy.schemaVersion).toBe(11);
+    expect(legacy.schemaVersion).toBe(12);
     expect(legacy.gyms).toEqual([]);
     expect(legacy.boards).toEqual([]);
     expect(legacy.grades).toEqual([]);
     expect(legacy.wallAngles).toEqual([]);
+    expect(legacy.strengthSets).toEqual([]);
     expect(legacy.sessions[0].initialGymId).toBeNull();
     expect(legacy.sessions[0].sessionRpe).toBeUndefined();
     expect(legacy.sessions[0].performance).toBeUndefined();
@@ -1218,8 +1287,8 @@ describe("repository", () => {
     expect(legacy.climbs[0].wallAngle).toBeUndefined();
   });
 
-  it("opens schema version 8 and reads old records without updatedAt, gym fields, effort, or wall angle", async () => {
-    expect(db.verno).toBe(8);
+  it("opens schema version 9 and reads old records without updatedAt, gym fields, effort, wall angle, or strength sets", async () => {
+    expect(db.verno).toBe(9);
 
     const oldSession: Session = {
       id: "old-session",

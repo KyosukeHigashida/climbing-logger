@@ -1,10 +1,10 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it } from "vitest";
 import { ActiveSessionProvider } from "../context/ActiveSessionContext";
 import { db } from "../db/db";
-import { createGym, createSession, getActiveSession } from "../db/repository";
+import { createGym, createSession, endSession, getActiveSession } from "../db/repository";
 import { HomePage } from "./HomePage";
 
 beforeEach(async () => {
@@ -42,6 +42,24 @@ describe("HomePage", () => {
     expect(screen.getByText("Select Gym")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "+ Add Gym" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "+ Add Board" })).toBeInTheDocument();
+  });
+
+  it("collapses and expands recent sessions", async () => {
+    const user = userEvent.setup();
+    const gym = await createGym("BETA");
+    const session = await createSession(gym.id);
+    await endSession(session.id);
+
+    renderHome();
+
+    const recentSessions = await screen.findByRole("region", { name: "Recent sessions" });
+    expect(within(recentSessions).getByText("BETA")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^Recent Sessions/ }));
+    expect(within(recentSessions).queryByText("BETA")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^Recent Sessions/ }));
+    expect(within(recentSessions).getByText("BETA")).toBeInTheDocument();
   });
 });
 

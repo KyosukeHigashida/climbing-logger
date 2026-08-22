@@ -4,7 +4,7 @@ import {
   loadCurrentActiveSessionSnapshot,
   type ActiveSessionSnapshot,
 } from "../db/repository";
-import type { Attempt, Board, Climb, Grade, WallAngle } from "../types/domain";
+import type { Attempt, Board, Climb, Grade, StrengthSet, WallAngle } from "../types/domain";
 import type { SavedWallSelection } from "../utils/currentClimb";
 
 type ActiveSessionContextValue = {
@@ -19,8 +19,11 @@ type ActiveSessionContextValue = {
   clearSnapshot: () => void;
   setCurrentClimbId: (currentClimbId: string | null) => void;
   setCurrentWallSelection: (wallSelection: SavedWallSelection) => void;
+  setCurrentActivityType: (activityType: "climb" | "training") => void;
   upsertClimb: (climb: Climb) => void;
   upsertAttempt: (attempt: Attempt) => void;
+  upsertStrengthSet: (strengthSet: StrengthSet) => void;
+  removeStrengthSet: (strengthSetId: string) => void;
   upsertBoard: (board: Board) => void;
   removeBoard: (boardId: string) => void;
   upsertGrade: (grade: Grade) => void;
@@ -92,6 +95,15 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const setCurrentActivityType = useCallback((activityType: "climb" | "training") => {
+    setSnapshot((current) => {
+      if (!current || current.ui.currentActivityType === activityType) {
+        return current;
+      }
+      return { ...current, ui: { ...current.ui, currentActivityType: activityType } };
+    });
+  }, []);
+
   const upsertClimb = useCallback((climb: Climb) => {
     setSnapshot((current) => {
       if (!current || current.session.id !== climb.sessionId) {
@@ -118,6 +130,24 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
 
   const removeAttempt = useCallback((attemptId: string) => {
     setSnapshot((current) => (current ? { ...current, attempts: current.attempts.filter((attempt) => attempt.id !== attemptId) } : current));
+  }, []);
+
+  const upsertStrengthSet = useCallback((strengthSet: StrengthSet) => {
+    setSnapshot((current) => {
+      if (!current || current.session.id !== strengthSet.sessionId) {
+        return current;
+      }
+      const strengthSets = current.strengthSets.some((item) => item.id === strengthSet.id)
+        ? current.strengthSets.map((item) => (item.id === strengthSet.id ? strengthSet : item))
+        : [...current.strengthSets, strengthSet];
+      return { ...current, strengthSets };
+    });
+  }, []);
+
+  const removeStrengthSet = useCallback((strengthSetId: string) => {
+    setSnapshot((current) =>
+      current ? { ...current, strengthSets: current.strengthSets.filter((strengthSet) => strengthSet.id !== strengthSetId) } : current,
+    );
   }, []);
 
   const upsertBoard = useCallback((board: Board) => {
@@ -218,8 +248,11 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
       clearSnapshot,
       setCurrentClimbId,
       setCurrentWallSelection,
+      setCurrentActivityType,
       upsertClimb,
       upsertAttempt,
+      upsertStrengthSet,
+      removeStrengthSet,
       upsertBoard,
       removeBoard,
       upsertGrade,
@@ -237,12 +270,15 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
       removeAttempt,
       removeGrade,
       removeWallAngle,
+      removeStrengthSet,
       setCurrentClimbId,
+      setCurrentActivityType,
       setCurrentWallSelection,
       snapshot,
       upsertAttempt,
       upsertBoard,
       upsertClimb,
+      upsertStrengthSet,
       upsertGrade,
       upsertWallAngle,
     ],

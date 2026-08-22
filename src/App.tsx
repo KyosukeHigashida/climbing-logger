@@ -1,4 +1,5 @@
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
+import { ScrollTopButton } from "./components/ScrollTopButton";
 import { ActiveSessionProvider } from "./context/ActiveSessionContext";
 import { GymsPage } from "./pages/GymsPage";
 import { HomePage } from "./pages/HomePage";
@@ -19,6 +20,7 @@ export default function App() {
           <Route path="/session/:sessionId/summary" element={<SessionSummaryPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        <ScrollTopButton />
       </HashRouter>
     </ActiveSessionProvider>
   );

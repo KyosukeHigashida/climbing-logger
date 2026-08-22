@@ -49,8 +49,42 @@ describe("timeline intervals", () => {
     expect(timeline[1]).toMatchObject({
       type: "rest",
       durationMs: 5 * 60 * 1000,
-      previousAttemptId: "a",
-      nextAttemptId: "b",
+      previousActionId: "a",
+      nextActionId: "b",
+    });
+  });
+
+  it("merges completed attempts and strength sets with session-wide rest", () => {
+    const timeline = buildSessionTimeline(
+      [
+        {
+          id: "attempt-a",
+          sessionId: "session",
+          climbId: "climb-a",
+          startedAt: "2026-08-17T18:00:00.000Z",
+          endedAt: "2026-08-17T18:00:30.000Z",
+          result: "send",
+          createdAt: "2026-08-17T18:00:00.000Z",
+        },
+      ],
+      [
+        {
+          id: "set-a",
+          sessionId: "session",
+          name: "Weighted Pull-up",
+          startedAt: "2026-08-17T18:05:00.000Z",
+          endedAt: "2026-08-17T18:05:20.000Z",
+          createdAt: "2026-08-17T18:05:00.000Z",
+        },
+      ],
+    );
+
+    expect(timeline.map((item) => item.type)).toEqual(["attempt", "rest", "strength"]);
+    expect(timeline[1]).toMatchObject({
+      type: "rest",
+      durationMs: 4.5 * 60 * 1000,
+      previousActionId: "attempt-a",
+      nextActionId: "set-a",
     });
   });
 

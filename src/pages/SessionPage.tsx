@@ -15,12 +15,17 @@ import {
   deleteAttempt,
   endSession,
   finishAttempt,
+  cancelStrengthSet,
+  finishStrengthSet,
   startAttempt,
+  startStrengthSet,
   updateAttempt,
   updateClimb,
   updateAttemptEffort,
+  updateStrengthSet,
+  updateStrengthSetMetadata,
 } from "../db/repository";
-import type { Attempt, AttemptEffort, AttemptResult, Board, Climb, Grade, Gym, Session, WallAngle } from "../types/domain";
+import type { Attempt, AttemptEffort, AttemptResult, Board, Climb, Grade, Gym, Session, StrengthSet, WallAngle } from "../types/domain";
 import { getAttemptCount, getAttemptEndTime, isActiveAttempt, sortAttemptsByTimestamp } from "../utils/attempts";
 import {
   getSavedCurrentClimbId,
@@ -29,6 +34,8 @@ import {
   saveCurrentWallSelection,
 } from "../utils/currentClimb";
 import { getReusableWallAnglePreset } from "../utils/wallAngles";
+import { getStrengthNameSuggestions } from "../utils/recentActivity";
+import { getOptionalNumericInputError, parseOptionalNumericInput } from "../utils/numericInput";
 
 type WallSelection = {
   wallType: "gym" | "board";
@@ -47,6 +54,13 @@ type ClimbDraft = {
   memo: string;
 };
 
+type TrainingDraft = {
+  name: string;
+  weight: string;
+  reps: string;
+  workDurationSeconds: string;
+};
+
 export function SessionPage() {
   const { sessionId } = useParams();
   const navigate = useNavigate();
@@ -58,10 +72,13 @@ export function SessionPage() {
     clearSnapshot,
     setCurrentClimbId: setStoreCurrentClimbId,
     setCurrentWallSelection: setStoreCurrentWallSelection,
+    setCurrentActivityType,
     upsertClimb,
     upsertAttempt,
     upsertWallAngle,
+    upsertStrengthSet,
     removeAttempt,
+    removeStrengthSet,
   } = activeSessionStore;
   const snapshot = storedSnapshot?.session.id === sessionId ? storedSnapshot : null;
   const [isLoadingSnapshot, setIsLoadingSnapshot] = useState(false);
@@ -69,21 +86,29 @@ export function SessionPage() {
   const isColdLoading = !snapshot && (isHydrating || isLoadingSnapshot);
   const [editingAttemptId, setEditingAttemptId] = useState<string | null>(null);
   const [pendingEffortAttemptId, setPendingEffortAttemptId] = useState<string | null>(null);
+  const [pendingStrengthSetId, setPendingStrengthSetId] = useState<string | null>(null);
   const [pendingEffort, setPendingEffort] = useState<AttemptEffort>(4);
   const [pendingAttemptNote, setPendingAttemptNote] = useState("");
+  const [pendingStrengthMemo, setPendingStrengthMemo] = useState("");
   const [skipEffort, setSkipEffort] = useState(false);
   const [finishingAttemptId, setFinishingAttemptId] = useState<string | null>(null);
+  const [finishingStrengthSetId, setFinishingStrengthSetId] = useState<string | null>(null);
   const [climbDraft, setClimbDraft] = useState<ClimbDraft | null>(null);
+  const [trainingDraft, setTrainingDraft] = useState<TrainingDraft>({ name: "", weight: "", reps: "", workDurationSeconds: "" });
+  const [isTrainingDraftOpen, setIsTrainingDraftOpen] = useState(false);
+  const [selectedStrengthSetId, setSelectedStrengthSetId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const session = snapshot?.session;
   const climbs = snapshot?.climbs ?? [];
   const attempts = snapshot?.attempts ?? [];
+  const strengthSets = snapshot?.strengthSets ?? [];
   const gyms = snapshot?.gyms ?? [];
   const boards = snapshot?.boards ?? [];
   const activeBoards = useMemo(() => boards.filter((board) => !board.isArchived), [boards]);
   const grades = snapshot?.grades ?? [];
   const wallAngles = snapshot?.wallAngles ?? [];
+  const currentActivityType = snapshot?.ui.currentActivityType ?? "climb";
   const currentClimbId = snapshot?.ui.currentClimbId ?? null;
   const wallSelection: WallSelection = useMemo(
     () => ({
@@ -243,6 +268,7 @@ export function SessionPage() {
 
   const currentClimb = climbs.find((climb) => climb.id === currentClimbId) ?? null;
   const activeAttempt = attempts.find(isActiveAttempt) ?? null;
+  const activeStrengthSet = strengthSets.find((set) => set.endedAt === null) ?? null;
   const currentClimbActiveAttempt = currentClimb
     ? attempts.find((attempt) => attempt.climbId === currentClimb.id && isActiveAttempt(attempt)) ?? null
     : null;
@@ -339,11 +365,18 @@ export function SessionPage() {
   const pendingEffortAttempt = pendingEffortAttemptId
     ? attempts.find((attempt) => attempt.id === pendingEffortAttemptId) ?? null
     : null;
+  const pendingStrengthSet = pendingStrengthSetId
+    ? strengthSets.find((strengthSet) => strengthSet.id === pendingStrengthSetId) ?? null
+    : null;
   const isFinishingCurrentAttempt = finishingAttemptId !== null && finishingAttemptId === currentClimbActiveAttempt?.id;
+  const isFinishingStrengthSet = finishingStrengthSetId !== null && finishingStrengthSetId === activeStrengthSet?.id;
+  const shouldShowTrainingCard = Boolean(isTrainingDraftOpen || activeStrengthSet || pendingStrengthSet || selectedStrengthSetId);
+  const trainingDraftError = getTrainingDraftError(trainingDraft);
   const editingAttempt = attempts.find((attempt) => attempt.id === editingAttemptId) ?? null;
   const lastCompletedAttempt = [...sortAttemptsByTimestamp(attempts)].reverse().find((attempt) => getAttemptEndTime(attempt));
   const restStartedAt = getAttemptEndTime(lastCompletedAttempt ?? ({} as Attempt)) ?? activeSession.startedAt;
   const initialWallAnglePreset = getReusableWallAnglePreset(climbs, activeSession.initialGymId ?? null, wallAngles);
+  const strengthNameSuggestions = getStrengthNameSuggestions(strengthSets);
   const selectedBoardGrades = wallSelection.wallBoardId
     ? grades.filter((grade) => grade.boardId === wallSelection.wallBoardId && !grade.isArchived).sort((a, b) => a.order - b.order)
     : [];
@@ -427,11 +460,21 @@ export function SessionPage() {
       return;
     }
     setError(null);
+    setSelectedStrengthSetId(null);
+    setIsTrainingDraftOpen(false);
+    setCurrentActivityType("climb");
     const selectedClimb = climbs.find((climb) => climb.id === climbId) ?? null;
     if (selectedClimb) {
       setStoreCurrentWallSelection(getWallSelectionForClimb(selectedClimb));
     }
     setStoreCurrentClimbId(climbId);
+  }
+
+  function handleStartTrainingDraft() {
+    setError(null);
+    setSelectedStrengthSetId(null);
+    setTrainingDraft({ name: "", weight: "", reps: "", workDurationSeconds: "" });
+    setIsTrainingDraftOpen(true);
   }
 
   async function handleStartAttempt() {
@@ -478,6 +521,94 @@ export function SessionPage() {
       setStoreCurrentClimbId(targetClimbId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start attempt.");
+    }
+  }
+
+  async function handleStartStrengthSet() {
+    if (!sessionId) {
+      return;
+    }
+    setError(null);
+    try {
+      const strengthSet = await startStrengthSet(sessionId, {
+        name: trainingDraft.name,
+        weight: parseWeightInput(trainingDraft.weight),
+        reps: parseRepsInput(trainingDraft.reps),
+        workDurationSeconds: parseWorkDurationInput(trainingDraft.workDurationSeconds),
+      });
+      upsertStrengthSet(strengthSet);
+      setSelectedStrengthSetId(strengthSet.id);
+      setIsTrainingDraftOpen(true);
+      setCurrentActivityType("training");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not start strength set.");
+    }
+  }
+
+  async function handleUpdateActiveStrengthSet(update: Partial<TrainingDraft>) {
+    setTrainingDraft((current) => ({ ...current, ...update }));
+    if (!activeStrengthSet) {
+      return;
+    }
+    try {
+      const nextDraft = { ...trainingDraft, ...update };
+      const strengthSet = await updateStrengthSet(activeStrengthSet.id, {
+        name: nextDraft.name,
+        weight: parseWeightInput(nextDraft.weight),
+        reps: parseRepsInput(nextDraft.reps),
+        workDurationSeconds: parseWorkDurationInput(nextDraft.workDurationSeconds),
+      });
+      upsertStrengthSet(strengthSet);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update strength set.");
+    }
+  }
+
+  async function handleFinishStrengthSet() {
+    if (!activeStrengthSet) {
+      return;
+    }
+    setError(null);
+    setFinishingStrengthSetId(activeStrengthSet.id);
+    try {
+      const strengthSet = await finishStrengthSet(activeStrengthSet.id);
+      upsertStrengthSet(strengthSet);
+      setPendingStrengthSetId(strengthSet.id);
+      setPendingEffort(strengthSet.effort ?? 4);
+      setPendingStrengthMemo(strengthSet.memo ?? "");
+      setFinishingStrengthSetId(null);
+    } catch (err) {
+      setFinishingStrengthSetId(null);
+      setError(err instanceof Error ? err.message : "Could not finish strength set.");
+    }
+  }
+
+  async function handleCancelStrengthSet() {
+    if (!activeStrengthSet || !window.confirm("Cancel this active strength set?")) {
+      return;
+    }
+    setError(null);
+    try {
+      await cancelStrengthSet(activeStrengthSet.id);
+      removeStrengthSet(activeStrengthSet.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not cancel strength set.");
+    }
+  }
+
+  async function handleSavePendingStrengthSet() {
+    if (!pendingStrengthSetId) {
+      return;
+    }
+    setError(null);
+    try {
+      const strengthSet = await updateStrengthSetMetadata(pendingStrengthSetId, skipEffort ? null : pendingEffort, pendingStrengthMemo);
+      upsertStrengthSet(strengthSet);
+      setPendingStrengthSetId(null);
+      setPendingStrengthMemo("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save strength set.");
     }
   }
 
@@ -601,10 +732,26 @@ export function SessionPage() {
 
       <section className="panel current-climb">
         <div className="section-heading">
-          <p className="current-climb-title">Current Climb</p>
+          <p className="current-climb-title">Current Action</p>
           {shouldStartNewClimb && <p className="muted compact new-climb-hint">Changes will start a new climb.</p>}
         </div>
-        {currentClimb ? (
+        <div className="activity-switch">
+          <button
+            type="button"
+            className={currentActivityType === "climb" ? "selected" : ""}
+            onClick={() => setCurrentActivityType("climb")}
+          >
+            CLIMB
+          </button>
+          <button
+            type="button"
+            className={currentActivityType === "training" ? "selected" : ""}
+            onClick={() => setCurrentActivityType("training")}
+          >
+            TRAINING
+          </button>
+        </div>
+        {currentActivityType === "climb" && currentClimb ? (
           <div className="current-climb-card">
             <div className="current-climb-layout">
               {climbDraft && (
@@ -643,7 +790,7 @@ export function SessionPage() {
                   Memo
                   <textarea
                     value={climbDraft.memo}
-                    placeholder="Beta, crux, footholds..."
+                    placeholder="Climb memo"
                     onChange={(event) => setClimbDraft((current) => (current ? { ...current, memo: event.target.value } : current))}
                   />
                 </label>
@@ -670,7 +817,7 @@ export function SessionPage() {
                     Memo
                     <textarea
                       value={pendingAttemptNote}
-                      placeholder="Slip, beta, why it failed..."
+                      placeholder="Attempt memo"
                       onChange={(event) => setPendingAttemptNote(event.target.value)}
                     />
                   </label>
@@ -692,17 +839,42 @@ export function SessionPage() {
                 </div>
               ) : (
                 <>
-                  <button className="primary climb-start-button" disabled={Boolean(activeAttempt)} onClick={handleStartAttempt}>
+                  <button className="primary climb-start-button" disabled={Boolean(activeAttempt || activeStrengthSet)} onClick={handleStartAttempt}>
                     START
                   </button>
                 </>
               )}
             </div>
           </div>
-        ) : (
+        ) : currentActivityType === "climb" ? (
           <button className="primary full" onClick={handleAddClimb}>
             Start Climb
           </button>
+        ) : !shouldShowTrainingCard ? (
+          <button className="primary full" onClick={handleStartTrainingDraft}>
+            Start Training
+          </button>
+        ) : (
+          <CurrentTrainingCard
+            draft={trainingDraft}
+            activeStrengthSet={activeStrengthSet}
+            pendingStrengthSet={pendingStrengthSet}
+            suggestions={strengthNameSuggestions}
+            isBusy={isFinishingStrengthSet}
+            pendingEffort={pendingEffort}
+            pendingMemo={pendingStrengthMemo}
+            skipEffort={skipEffort}
+            hasBlockingAttempt={Boolean(activeAttempt)}
+            validationMessage={trainingDraftError}
+            onDraftChange={handleUpdateActiveStrengthSet}
+            onStart={handleStartStrengthSet}
+            onFinish={handleFinishStrengthSet}
+            onCancel={handleCancelStrengthSet}
+            onEffortChange={setPendingEffort}
+            onMemoChange={setPendingStrengthMemo}
+            onSkipEffortChange={setSkipEffort}
+            onSaveMetadata={handleSavePendingStrengthSet}
+          />
         )}
         {error && <p className="error">{error}</p>}
       </section>
@@ -710,10 +882,17 @@ export function SessionPage() {
       <ClimbList
         climbs={orderedClimbs}
         attempts={attempts}
+        strengthSets={strengthSets}
         gyms={gyms}
-        currentClimbId={currentClimbId}
+        currentClimbId={currentActivityType === "climb" ? currentClimbId : null}
+        currentStrengthSetId={currentActivityType === "training" ? selectedStrengthSetId : null}
         onSelect={handleSelectClimb}
-        onEdit={(climb) => handleSelectClimb(climb.id)}
+        onSelectStrength={(strengthSet) => {
+          setSelectedStrengthSetId(strengthSet.id);
+          setIsTrainingDraftOpen(true);
+          setTrainingDraft(strengthSetToDraft(strengthSet));
+          setCurrentActivityType("training");
+        }}
       />
 
       {editingAttempt && (
@@ -730,7 +909,7 @@ export function SessionPage() {
         />
       )}
 
-      <AttemptTimeline attempts={attempts} climbs={climbs} gyms={gyms} onEdit={(attempt) => setEditingAttemptId(attempt.id)} />
+      <AttemptTimeline attempts={attempts} strengthSets={strengthSets} climbs={climbs} gyms={gyms} onEdit={(attempt) => setEditingAttemptId(attempt.id)} />
 
       <button className="danger full end-button" onClick={handleEndSession}>
         END SESSION
@@ -843,12 +1022,8 @@ function EditableClimbCard({
           className="wall-angle-popover"
           onSubmit={async (event) => {
             event.preventDefault();
-            const parsedAngle = Number(newWallAngle.trim());
-            if (!newWallAngle.trim() || !Number.isFinite(parsedAngle)) {
-              onError("Wall angle must be a number.");
-              return;
-            }
             try {
+              const parsedAngle = parseWallAngleInput(newWallAngle);
               const createdAngle =
                 draft.wallType === "board" && draft.wallBoardId
                   ? await createBoardWallAngle(draft.wallBoardId, parsedAngle)
@@ -877,7 +1052,7 @@ function EditableClimbCard({
             inputMode="decimal"
             value={newWallAngle}
             onChange={(event) => setNewWallAngle(event.target.value)}
-            placeholder="120"
+            placeholder="Wall angle"
             aria-label="New wall angle"
           />
           <span>°</span>
@@ -898,6 +1073,123 @@ function EditableClimbCard({
   );
 }
 
+function CurrentTrainingCard({
+  draft,
+  activeStrengthSet,
+  pendingStrengthSet,
+  suggestions,
+  isBusy,
+  pendingEffort,
+  pendingMemo,
+  skipEffort,
+  hasBlockingAttempt,
+  validationMessage,
+  onDraftChange,
+  onStart,
+  onFinish,
+  onCancel,
+  onEffortChange,
+  onMemoChange,
+  onSkipEffortChange,
+  onSaveMetadata,
+}: {
+  draft: TrainingDraft;
+  activeStrengthSet: StrengthSet | null;
+  pendingStrengthSet: StrengthSet | null;
+  suggestions: string[];
+  isBusy: boolean;
+  pendingEffort: AttemptEffort;
+  pendingMemo: string;
+  skipEffort: boolean;
+  hasBlockingAttempt: boolean;
+  validationMessage: string | null;
+  onDraftChange: (update: Partial<TrainingDraft>) => void;
+  onStart: () => void;
+  onFinish: () => void;
+  onCancel: () => void;
+  onEffortChange: (effort: AttemptEffort) => void;
+  onMemoChange: (memo: string) => void;
+  onSkipEffortChange: (skip: boolean) => void;
+  onSaveMetadata: () => void;
+}) {
+  return (
+    <div className="current-climb-card current-training-card">
+      <div className="training-grid">
+        <label className="climb-text-chip training-name-chip">
+          <input
+            value={draft.name}
+            list="strength-name-suggestions"
+            placeholder="Exercise name"
+            onChange={(event) => onDraftChange({ name: event.target.value })}
+          />
+        </label>
+        <datalist id="strength-name-suggestions">
+          {suggestions.map((name) => (
+            <option key={name} value={name} />
+          ))}
+        </datalist>
+        <label className="select-chip training-input-chip">
+          <span className="metric-label">Weight kg</span>
+          <input inputMode="decimal" value={draft.weight} placeholder="Weight" onChange={(event) => onDraftChange({ weight: event.target.value })} />
+        </label>
+        <label className="select-chip training-input-chip">
+          <span className="metric-label">Reps</span>
+          <input inputMode="numeric" value={draft.reps} placeholder="Reps" onChange={(event) => onDraftChange({ reps: event.target.value })} />
+        </label>
+        <label className="select-chip training-input-chip">
+          <span className="metric-label">Work sec</span>
+          <input
+            inputMode="decimal"
+            value={draft.workDurationSeconds}
+            placeholder="Seconds"
+            onChange={(event) => onDraftChange({ workDurationSeconds: event.target.value })}
+          />
+        </label>
+      </div>
+      {validationMessage && <p className="error compact">{validationMessage}</p>}
+
+      {pendingStrengthSet ? (
+        <div className="post-attempt-effort">
+          <div className="section-heading">
+            <span className="label">Effort</span>
+            <label className="skip-effort-toggle">
+              <input type="checkbox" checked={skipEffort} onChange={(event) => onSkipEffortChange(event.target.checked)} />
+              Skip
+            </label>
+          </div>
+          {skipEffort ? <p className="muted compact">Effort will not be recorded.</p> : <EffortInput value={pendingEffort} onChange={onEffortChange} />}
+          <label className="attempt-note-field">
+            Memo
+            <textarea value={pendingMemo} placeholder="Set memo" onChange={(event) => onMemoChange(event.target.value)} />
+          </label>
+          <button className="primary full" onClick={onSaveMetadata}>
+            Save
+          </button>
+        </div>
+      ) : activeStrengthSet ? (
+        <div className="attempt-action-grid">
+          <div className="training-progress">
+            <span className="label">SET IN PROGRESS</span>
+            <strong>
+              <IntervalTimer since={activeStrengthSet.startedAt} />
+            </strong>
+          </div>
+          <button className="primary full" disabled={isBusy} onClick={onFinish}>
+            FINISH
+          </button>
+          <button className="secondary full" disabled={isBusy} onClick={onCancel}>
+            Cancel Set
+          </button>
+        </div>
+      ) : (
+        <button className="primary climb-start-button" disabled={Boolean(hasBlockingAttempt || validationMessage)} onClick={onStart}>
+          START SET
+        </button>
+      )}
+    </div>
+  );
+}
+
 function createClimbDraft(climb: Climb): ClimbDraft {
   return {
     grade: climb.grade,
@@ -910,6 +1202,42 @@ function createClimbDraft(climb: Climb): ClimbDraft {
     wallLabel: climb.wallLabel ?? null,
     memo: climb.memo ?? "",
   };
+}
+
+function strengthSetToDraft(strengthSet: StrengthSet): TrainingDraft {
+  return {
+    name: strengthSet.name,
+    weight: strengthSet.weight === null || strengthSet.weight === undefined ? "" : String(strengthSet.weight),
+    reps: strengthSet.reps === null || strengthSet.reps === undefined ? "" : String(strengthSet.reps),
+    workDurationSeconds:
+      strengthSet.workDurationSeconds === null || strengthSet.workDurationSeconds === undefined
+        ? ""
+        : String(strengthSet.workDurationSeconds),
+  };
+}
+
+function parseWeightInput(value: string): number | null {
+  return parseOptionalNumericInput(value, { label: "Weight", min: 0 });
+}
+
+function parseRepsInput(value: string): number | null {
+  return parseOptionalNumericInput(value, { label: "Reps", integer: true, min: 0 });
+}
+
+function parseWorkDurationInput(value: string): number | null {
+  return parseOptionalNumericInput(value, { label: "Work duration", min: 0 });
+}
+
+function parseWallAngleInput(value: string): number {
+  return parseOptionalNumericInput(value, { label: "Wall angle", required: true, min: 0, max: 180 }) ?? 0;
+}
+
+function getTrainingDraftError(draft: TrainingDraft): string | null {
+  return (
+    getOptionalNumericInputError(draft.weight, { label: "Weight", min: 0 }) ??
+    getOptionalNumericInputError(draft.reps, { label: "Reps", integer: true, min: 0 }) ??
+    getOptionalNumericInputError(draft.workDurationSeconds, { label: "Work duration", min: 0 })
+  );
 }
 
 function getWallDraftFromSelection(wallSelection: WallSelection, boards: Board[]): Pick<ClimbDraft, "wallType" | "wallBoardId" | "wallLabel"> {

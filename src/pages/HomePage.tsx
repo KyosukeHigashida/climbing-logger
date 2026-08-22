@@ -26,6 +26,7 @@ export function HomePage() {
   const [selectedGymId, setSelectedGymId] = useState<string>("");
   const [isQaOpen, setIsQaOpen] = useState(false);
   const [isEditingSessions, setIsEditingSessions] = useState(false);
+  const [isRecentSessionsExpanded, setIsRecentSessionsExpanded] = useState(true);
   const activeSessionStore = useActiveSession();
   const sessions = useLiveQuery(() => getAllSessions(), []);
   const attempts = useLiveQuery(() => getAllAttempts(), []);
@@ -115,7 +116,7 @@ export function HomePage() {
       const parsed = JSON.parse(await file.text()) as unknown;
       const restored = await restoreAllData(parsed);
       setRestoreMessage(
-        `Restored ${restored.gyms.length} gyms, ${restored.grades.length} grades, ${restored.sessions.length} sessions, ${restored.climbs.length} climbs, ${restored.attempts.length} attempts.`,
+        `Restored ${restored.gyms.length} gyms, ${restored.grades.length} grades, ${restored.sessions.length} sessions, ${restored.climbs.length} climbs, ${restored.attempts.length} attempts, ${restored.strengthSets.length} strength sets.`,
       );
     } catch (err) {
       setRestoreMessage(err instanceof Error ? err.message : "Could not restore backup.");
@@ -210,46 +211,66 @@ export function HomePage() {
         </section>
       )}
 
-      <section className="section">
-        <div className="section-heading">
-          <h2>Recent Sessions</h2>
-          {completedSessions.length > 0 && (
+      <section className="section recent-sessions-section" aria-label="Recent sessions">
+        <div className="collapsible-heading">
+          <button
+            type="button"
+            className="timeline-header recent-sessions-title-button"
+            aria-expanded={isRecentSessionsExpanded}
+            onClick={() => setIsRecentSessionsExpanded((current) => !current)}
+          >
+            <span>
+              Recent Sessions <small>· {completedSessions.length}</small>
+            </span>
+          </button>
+          {isRecentSessionsExpanded && completedSessions.length > 0 && (
             <button className="small-text-action" onClick={() => setIsEditingSessions((current) => !current)}>
               {isEditingSessions ? "Done" : "Edit"}
             </button>
           )}
+          <button
+            type="button"
+            className="timeline-chevron recent-sessions-toggle"
+            aria-label={isRecentSessionsExpanded ? "Collapse Recent Sessions" : "Expand Recent Sessions"}
+            aria-expanded={isRecentSessionsExpanded}
+            onClick={() => setIsRecentSessionsExpanded((current) => !current)}
+          >
+            {isRecentSessionsExpanded ? "⌃" : "⌄"}
+          </button>
         </div>
-        {completedSessions.length === 0 ? (
-          <p className="empty">Completed sessions will stay here.</p>
-        ) : (
-          <div className="session-list">
-            {completedSessions.slice(0, 8).map((session) => {
-              const attemptCount = getAttemptCount(attempts.filter((attempt) => attempt.sessionId === session.id));
-              const gymName = session.initialGymId ? gymById.get(session.initialGymId)?.name ?? "Unknown Gym" : "No Gym";
-              const label = formatShortDate(session.startedAt);
-              return (
-                <div className="session-row" key={session.id}>
-                  <button className="session-open" onClick={() => navigate(`/session/${session.id}/summary`)}>
-                    <span>
-                      <strong>{label}</strong>
-                      <small>{gymName}</small>
-                      <small>{formatSessionDuration(session.startedAt, session.endedAt)}</small>
-                    </span>
-                    <span className="muted">{attemptCount} attempts</span>
-                  </button>
-                  {isEditingSessions && (
-                    <button
-                      className="session-delete-action"
-                      aria-label={`Delete ${label} session`}
-                      onClick={() => void handleDeleteSession(session.id, label, attemptCount)}
-                    >
-                      Delete
+        {isRecentSessionsExpanded && (
+          completedSessions.length === 0 ? (
+            <p className="empty">Completed sessions will stay here.</p>
+          ) : (
+            <div className="session-list">
+              {completedSessions.slice(0, 8).map((session) => {
+                const attemptCount = getAttemptCount(attempts.filter((attempt) => attempt.sessionId === session.id));
+                const gymName = session.initialGymId ? gymById.get(session.initialGymId)?.name ?? "Unknown Gym" : "No Gym";
+                const label = formatShortDate(session.startedAt);
+                return (
+                  <div className="session-row" key={session.id}>
+                    <button className="session-open" onClick={() => navigate(`/session/${session.id}/summary`)}>
+                      <span>
+                        <strong>{label}</strong>
+                        <small>{gymName}</small>
+                        <small>{formatSessionDuration(session.startedAt, session.endedAt)}</small>
+                      </span>
+                      <span className="muted">{attemptCount} attempts</span>
                     </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                    {isEditingSessions && (
+                      <button
+                        className="session-delete-action"
+                        aria-label={`Delete ${label} session`}
+                        onClick={() => void handleDeleteSession(session.id, label, attemptCount)}
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )
         )}
       </section>
 

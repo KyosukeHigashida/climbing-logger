@@ -10,11 +10,12 @@ import {
   getSession,
   getSessionAttempts,
   getSessionClimbs,
+  getSessionStrengthSets,
   reopenSession,
   updateAttempt,
   updateSessionReview,
 } from "../db/repository";
-import type { Attempt, Climb, Gym, Session } from "../types/domain";
+import type { Attempt, Climb, Gym, Session, StrengthSet } from "../types/domain";
 import { getFailCount, getSendCount } from "../utils/attempts";
 import { formatSessionDuration } from "../utils/time";
 import { useEffect, useState } from "react";
@@ -43,6 +44,10 @@ export function SessionSummaryPage() {
     () => (sessionId ? getSessionAttempts(sessionId) : Promise.resolve([] as Attempt[])),
     [sessionId],
   );
+  const strengthSets = useLiveQuery<StrengthSet[]>(
+    () => (sessionId ? getSessionStrengthSets(sessionId) : Promise.resolve([] as StrengthSet[])),
+    [sessionId],
+  );
   const gyms = useLiveQuery<Gym[]>(() => getAllGyms(), []);
 
   useEffect(() => {
@@ -60,7 +65,7 @@ export function SessionSummaryPage() {
     setReviewMessage(null);
   }, [sessionId]);
 
-  if (session === undefined || !climbs || !attempts || !gyms) {
+  if (session === undefined || !climbs || !attempts || !strengthSets || !gyms) {
     return <main className="app-shell loading">Loading summary...</main>;
   }
 
@@ -80,6 +85,8 @@ export function SessionSummaryPage() {
 
   const sends = getSendCount(attempts);
   const fails = getFailCount(attempts);
+  const completedStrengthSets = strengthSets.filter((set) => set.endedAt !== null);
+  const exerciseCount = new Set(completedStrengthSets.map((set) => set.name.trim()).filter(Boolean)).size;
   const editingAttempt = attempts.find((attempt) => attempt.id === editingAttemptId) ?? null;
 
   async function handleReopenSession() {
@@ -145,6 +152,14 @@ export function SessionSummaryPage() {
         <div>
           <span className="metric-label">Climbs</span>
           <strong>{climbs.length}</strong>
+        </div>
+        <div>
+          <span className="metric-label">Strength Sets</span>
+          <strong>{completedStrengthSets.length}</strong>
+        </div>
+        <div>
+          <span className="metric-label">Exercises</span>
+          <strong>{exerciseCount}</strong>
         </div>
       </section>
 
@@ -248,7 +263,7 @@ export function SessionSummaryPage() {
         />
       )}
 
-      <AttemptTimeline attempts={attempts} climbs={climbs} gyms={gyms} onEdit={(attempt) => setEditingAttemptId(attempt.id)} />
+      <AttemptTimeline attempts={attempts} strengthSets={strengthSets} climbs={climbs} gyms={gyms} onEdit={(attempt) => setEditingAttemptId(attempt.id)} />
     </main>
   );
 }

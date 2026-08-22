@@ -1,5 +1,6 @@
 import { type FormEvent, useEffect, useState } from "react";
 import type { Grade, Gym, WallAngle } from "../types/domain";
+import { parseOptionalNumericInput } from "../utils/numericInput";
 
 export type ClimbFormValue = {
   grade: string;
@@ -63,14 +64,17 @@ export function ClimbForm({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const resolvedGrade = selectedGrade?.label ?? grade.trim();
-    const trimmedWallAngle = wallAngle.trim();
-    const parsedWallAngle = selectedWallAngle?.angle ?? (trimmedWallAngle ? Number(trimmedWallAngle) : null);
     if (!resolvedGrade) {
       setError("Grade is required.");
       return;
     }
-    if (parsedWallAngle !== null && !Number.isFinite(parsedWallAngle)) {
-      setError("Wall angle must be a number.");
+
+    let parsedWallAngle: number | null;
+    try {
+      parsedWallAngle =
+        selectedWallAngle?.angle ?? parseOptionalNumericInput(wallAngle, { label: "Wall angle", min: 0, max: 180 });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Wall angle is invalid.");
       return;
     }
 
@@ -123,12 +127,12 @@ export function ClimbForm({
             ))}
           </select>
         ) : (
-          <input value={grade} onChange={(event) => setGrade(event.target.value)} placeholder="2Q" />
+          <input value={grade} onChange={(event) => setGrade(event.target.value)} placeholder="Grade label" />
         )}
       </label>
       <label>
         Name / number
-        <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Yellow #12" />
+        <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Name / number" />
       </label>
       <label>
         Wall angle
@@ -155,7 +159,7 @@ export function ClimbForm({
               inputMode="decimal"
               value={wallAngle}
               onChange={(event) => setWallAngle(event.target.value)}
-              placeholder="120"
+              placeholder="Wall angle"
             />
             <span>°</span>
           </div>

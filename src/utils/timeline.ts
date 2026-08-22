@@ -1,4 +1,4 @@
-import type { Attempt } from "../types/domain";
+import type { Attempt, StrengthSet } from "../types/domain";
 import { getAttemptEndTime, getAttemptStartTime, isCompletedAttempt, sortAttemptsByTimestamp } from "./attempts";
 
 export type AttemptTimelineItem = {
@@ -15,11 +15,19 @@ export type RestTimelineItem = {
   startedAt: string;
   endedAt: string;
   durationMs: number;
-  previousAttemptId: string;
-  nextAttemptId: string;
+  previousActionId: string;
+  nextActionId: string;
 };
 
-export type TimelineItem = AttemptTimelineItem | RestTimelineItem;
+export type StrengthTimelineItem = {
+  type: "strength";
+  set: StrengthSet;
+  startedAt: string;
+  endedAt: string;
+  actionDurationMs: number;
+};
+
+export type TimelineItem = AttemptTimelineItem | StrengthTimelineItem | RestTimelineItem;
 
 export function getActionDurationMs(attempt: Attempt): number | null {
   const startedAt = getAttemptStartTime(attempt);
@@ -30,38 +38,57 @@ export function getActionDurationMs(attempt: Attempt): number | null {
   return Math.max(0, new Date(endedAt).getTime() - new Date(startedAt).getTime());
 }
 
-export function buildSessionTimeline(attempts: Attempt[]): TimelineItem[] {
+export function buildSessionTimeline(attempts: Attempt[], strengthSets: StrengthSet[] = []): TimelineItem[] {
   const completedAttempts = sortAttemptsByTimestamp(attempts).filter(isCompletedAttempt);
+  const completedStrengthSets = strengthSets
+    .filter((set) => set.endedAt !== null)
+    .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
+  const actionItems = [
+    ...completedAttempts.map((attempt): AttemptTimelineItem => {
+      const startedAt = getAttemptStartTime(attempt);
+      const endedAt = getAttemptEndTime(attempt);
+      return {
+        type: "attempt",
+        attempt,
+        startedAt,
+        endedAt,
+        actionDurationMs: getActionDurationMs(attempt),
+      };
+    }),
+    ...completedStrengthSets.map((set): StrengthTimelineItem => ({
+      type: "strength",
+      set,
+      startedAt: set.startedAt,
+      endedAt: set.endedAt ?? set.startedAt,
+      actionDurationMs: Math.max(0, new Date(set.endedAt ?? set.startedAt).getTime() - new Date(set.startedAt).getTime()),
+    })),
+  ].sort((a, b) => new Date(a.startedAt ?? a.endedAt ?? "").getTime() - new Date(b.startedAt ?? b.endedAt ?? "").getTime());
   const items: TimelineItem[] = [];
 
-  completedAttempts.forEach((attempt, index) => {
-    const startedAt = getAttemptStartTime(attempt);
-    const endedAt = getAttemptEndTime(attempt);
-    items.push({
-      type: "attempt",
-      attempt,
-      startedAt,
-      endedAt,
-      actionDurationMs: getActionDurationMs(attempt),
-    });
-
-    const nextAttempt = completedAttempts[index + 1];
-    const nextStartedAt = nextAttempt ? getAttemptStartTime(nextAttempt) : null;
-    if (endedAt && nextAttempt && nextStartedAt) {
+  actionItems.forEach((item, index) => {
+    items.push(item);
+    const endedAt = item.endedAt;
+    const nextItem = actionItems[index + 1];
+    const nextStartedAt = nextItem?.startedAt ?? null;
+    if (endedAt && nextItem && nextStartedAt) {
       const durationMs = new Date(nextStartedAt).getTime() - new Date(endedAt).getTime();
       if (durationMs >= 0) {
         items.push({
           type: "rest",
-          id: `${attempt.id}:${nextAttempt.id}`,
+          id: `${getTimelineActionId(item)}:${getTimelineActionId(nextItem)}`,
           startedAt: endedAt,
           endedAt: nextStartedAt,
           durationMs,
-          previousAttemptId: attempt.id,
-          nextAttemptId: nextAttempt.id,
+          previousActionId: getTimelineActionId(item),
+          nextActionId: getTimelineActionId(nextItem),
         });
       }
     }
   });
 
   return items;
+}
+
+function getTimelineActionId(item: AttemptTimelineItem | StrengthTimelineItem): string {
+  return item.type === "attempt" ? item.attempt.id : item.set.id;
 }

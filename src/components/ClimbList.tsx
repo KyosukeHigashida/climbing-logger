@@ -1,24 +1,38 @@
 import { useState } from "react";
-import type { Attempt, Climb, Gym } from "../types/domain";
+import type { Attempt, Climb, Gym, StrengthSet } from "../types/domain";
 import { getAttemptCountsByClimb } from "../utils/attempts";
 import { formatClimbLabel } from "../utils/climbs";
+import { buildRecentActivity, type RecentActivityFilter } from "../utils/recentActivity";
 
 type ClimbListProps = {
   climbs: Climb[];
   attempts: Attempt[];
+  strengthSets?: StrengthSet[];
   gyms?: Gym[];
   currentClimbId: string | null;
+  currentStrengthSetId?: string | null;
   onSelect: (climbId: string) => void;
-  onEdit: (climb: Climb) => void;
+  onSelectStrength?: (strengthSet: StrengthSet) => void;
 };
 
-export function ClimbList({ climbs, attempts, gyms = [], currentClimbId, onSelect, onEdit }: ClimbListProps) {
+export function ClimbList({
+  climbs,
+  attempts,
+  strengthSets = [],
+  gyms = [],
+  currentClimbId,
+  currentStrengthSetId = null,
+  onSelect,
+  onSelectStrength,
+}: ClimbListProps) {
   const [isExpanded, setIsExpanded] = useState(true);
+  const [filter, setFilter] = useState<RecentActivityFilter>("activity");
   const attemptCounts = getAttemptCountsByClimb(attempts);
   const gymById = new Map(gyms.map((gym) => [gym.id, gym]));
+  const activityItems = buildRecentActivity(climbs, attempts, strengthSets, filter);
 
   return (
-    <section className="section climb-section" aria-label="Recent climbs">
+    <section className="section climb-section" aria-label="Recent activity">
       <button
         type="button"
         className="timeline-header"
@@ -26,7 +40,7 @@ export function ClimbList({ climbs, attempts, gyms = [], currentClimbId, onSelec
         onClick={() => setIsExpanded((current) => !current)}
       >
         <span>
-          Recent Climbs <small>· {climbs.length}</small>
+          Recent Activity <small>· {activityItems.length}</small>
         </span>
         <span className="timeline-chevron" aria-hidden="true">
           {isExpanded ? "⌃" : "⌄"}
@@ -35,31 +49,73 @@ export function ClimbList({ climbs, attempts, gyms = [], currentClimbId, onSelec
 
       {isExpanded && (
         <div className="climb-scroll">
-          {climbs.length === 0 ? (
-            <p className="empty">No climbs yet.</p>
+          <div className="activity-filter" role="tablist" aria-label="Recent activity filter">
+            {(["activity", "climbs", "training"] as const).map((nextFilter) => (
+              <button
+                key={nextFilter}
+                type="button"
+                className={filter === nextFilter ? "selected" : ""}
+                onClick={() => setFilter(nextFilter)}
+              >
+                {nextFilter === "activity" ? "Activity" : nextFilter === "climbs" ? "Climbs" : "Training"}
+              </button>
+            ))}
+          </div>
+          {activityItems.length === 0 ? (
+            <p className="empty">Activity will appear here.</p>
           ) : (
             <div className="climb-list">
-              {climbs.map((climb) => (
-                <div className={`climb-row ${climb.id === currentClimbId ? "selected" : ""}`} key={climb.id}>
-                  <button className="climb-select" onClick={() => onSelect(climb.id)}>
-                    <span>
-                      <strong>{formatClimbLabel(climb)}</strong>
-                      {climb.name ? ` ${climb.name}` : ""}
-                      {climb.gymId && gymById.get(climb.gymId) ? (
-                        <small className="climb-venue">{gymById.get(climb.gymId)?.name}</small>
-                      ) : null}
-                    </span>
-                    <span className="muted">{attemptCounts.get(climb.id) ?? 0} attempts</span>
-                  </button>
-                  <button className="edit-action" onClick={() => onEdit(climb)}>
-                    Edit
-                  </button>
-                </div>
-              ))}
+              {activityItems.map((item) => {
+                if (item.type === "training") {
+                  return (
+                    <div className={`climb-row training-row ${item.set.id === currentStrengthSetId ? "selected" : ""}`} key={item.set.id}>
+                      <button className="climb-select" onClick={() => onSelectStrength?.(item.set)}>
+                        <span>
+                          <strong>{item.set.name}</strong>
+                        </span>
+                        <span className="muted">{formatStrengthSetMeta(item.set)}</span>
+                      </button>
+                    </div>
+                  );
+                }
+
+                const climb = item.climb;
+                return (
+                  <div className={`climb-row ${climb.id === currentClimbId ? "selected" : ""}`} key={climb.id}>
+                    <button className="climb-select" onClick={() => onSelect(climb.id)}>
+                      <span>
+                        <strong>{formatClimbLabel(climb)}</strong>
+                        {climb.name ? ` ${climb.name}` : ""}
+                        {climb.gymId && gymById.get(climb.gymId) ? (
+                          <small className="climb-venue">{gymById.get(climb.gymId)?.name}</small>
+                        ) : null}
+                      </span>
+                      <span className="muted">
+                        {attemptCounts.get(climb.id) ?? 0} attempts
+                      </span>
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
       )}
     </section>
   );
+}
+
+function formatStrengthSetMeta(set: StrengthSet): string {
+  const parts: string[] = [];
+  if (set.weight !== null && set.weight !== undefined && set.reps !== null && set.reps !== undefined) {
+    parts.push(`${set.weight} kg`, `${set.reps} reps`);
+  } else if (set.weight !== null && set.weight !== undefined) {
+    parts.push(`${set.weight} kg`);
+  } else if (set.reps !== null && set.reps !== undefined) {
+    parts.push(`${set.reps} reps`);
+  }
+  if (set.workDurationSeconds !== null && set.workDurationSeconds !== undefined) {
+    parts.push(`${set.workDurationSeconds} sec`);
+  }
+  return parts.join(", ") || "Strength set";
 }

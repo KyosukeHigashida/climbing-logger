@@ -1,9 +1,9 @@
 import { db } from "./db";
-import type { Attempt, AttemptEffort, AttemptResult, Board, Climb, Grade, Gym, Session, WallAngle } from "../types/domain";
+import type { Attempt, AttemptEffort, AttemptResult, Board, Climb, EffortRating, Grade, Gym, Session, StrengthSet, WallAngle } from "../types/domain";
 import { generateId } from "../utils/id";
 import { nowIso } from "../utils/time";
 
-const CURRENT_SCHEMA_VERSION = 11;
+const CURRENT_SCHEMA_VERSION = 12;
 
 export type DataExport = {
   schemaVersion: number;
@@ -15,12 +15,14 @@ export type DataExport = {
   sessions: Session[];
   climbs: Climb[];
   attempts: Attempt[];
+  strengthSets: StrengthSet[];
 };
 
 export type ActiveSessionSnapshot = {
   session: Session;
   climbs: Climb[];
   attempts: Attempt[];
+  strengthSets: StrengthSet[];
   gym: Gym | null;
   gyms: Gym[];
   boards: Board[];
@@ -30,7 +32,19 @@ export type ActiveSessionSnapshot = {
     currentClimbId: string | null;
     currentWallType: "gym" | "board";
     currentBoardId: string | null;
+    currentActivityType: "climb" | "training";
   };
+};
+
+export type StrengthSetUpdate = {
+  name?: string;
+  startedAt?: string;
+  endedAt?: string | null;
+  weight?: number | null;
+  reps?: number | null;
+  workDurationSeconds?: number | null;
+  effort?: EffortRating | null;
+  memo?: string | null;
 };
 
 export type AttemptUpdate = {
@@ -515,6 +529,10 @@ export function getAllAttempts(): Promise<Attempt[]> {
   return db.attempts.toArray();
 }
 
+export function getAllStrengthSets(): Promise<StrengthSet[]> {
+  return db.strengthSets.toArray();
+}
+
 export function getAllClimbs(): Promise<Climb[]> {
   return db.climbs.toArray();
 }
@@ -543,9 +561,10 @@ export async function loadActiveSessionSnapshot(
     return null;
   }
 
-  const [climbs, attempts, gyms, boards, grades, wallAngles] = await Promise.all([
+  const [climbs, attempts, strengthSets, gyms, boards, grades, wallAngles] = await Promise.all([
     getSessionClimbs(sessionId),
     getSessionAttempts(sessionId),
+    getSessionStrengthSets(sessionId),
     getAllGyms(),
     getActiveBoards(),
     getAllGrades(),
@@ -570,9 +589,11 @@ export async function loadActiveSessionSnapshot(
     boards,
     grades,
     wallAngles,
+    strengthSets,
     ui: {
       currentClimbId: resolvedCurrentClimbId,
       ...resolvedCurrentWall,
+      currentActivityType: "climb",
     },
   };
 }
@@ -592,6 +613,13 @@ export function getSessionAttempts(sessionId: string): Promise<Attempt[]> {
     .toArray((attempts) => attempts.sort((a, b) => getAttemptSortTime(a) - getAttemptSortTime(b)));
 }
 
+export function getSessionStrengthSets(sessionId: string): Promise<StrengthSet[]> {
+  return db.strengthSets
+    .where("sessionId")
+    .equals(sessionId)
+    .toArray((sets) => sets.sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime()));
+}
+
 export function getClimbAttempts(climbId: string): Promise<Attempt[]> {
   return db.attempts
     .where("climbId")
@@ -605,6 +633,16 @@ export async function getActiveAttempt(sessionId: string): Promise<Attempt | nul
       .where("sessionId")
       .equals(sessionId)
       .filter((attempt) => isActiveAttempt(attempt))
+      .first()) ?? null
+  );
+}
+
+export async function getActiveStrengthSet(sessionId: string): Promise<StrengthSet | null> {
+  return (
+    (await db.strengthSets
+      .where("sessionId")
+      .equals(sessionId)
+      .filter((strengthSet) => strengthSet.endedAt === null)
       .first()) ?? null
   );
 }
@@ -635,6 +673,10 @@ export async function endSession(sessionId: string): Promise<void> {
   const activeAttempt = await getActiveAttempt(sessionId);
   if (activeAttempt) {
     throw new Error("Finish or cancel the active attempt first.");
+  }
+  const activeStrengthSet = await getActiveStrengthSet(sessionId);
+  if (activeStrengthSet) {
+    throw new Error("Finish or cancel the active strength set first.");
   }
 
   const timestamp = nowIso();
@@ -680,11 +722,13 @@ export async function deleteSession(sessionId: string): Promise<void> {
     throw new Error("Session does not exist.");
   }
 
-  await db.transaction("rw", db.sessions, db.climbs, db.attempts, async () => {
+  await db.transaction("rw", db.sessions, db.climbs, db.attempts, db.strengthSets, async () => {
     const climbs = await db.climbs.where("sessionId").equals(sessionId).toArray();
     const attempts = await db.attempts.where("sessionId").equals(sessionId).toArray();
+    const strengthSets = await db.strengthSets.where("sessionId").equals(sessionId).toArray();
 
     await db.attempts.bulkDelete(attempts.map((attempt) => attempt.id));
+    await db.strengthSets.bulkDelete(strengthSets.map((strengthSet) => strengthSet.id));
     await db.climbs.bulkDelete(climbs.map((climb) => climb.id));
     await db.sessions.delete(sessionId);
   });
@@ -897,15 +941,151 @@ export async function startAttempt(sessionId: string, climbId: string): Promise<
     createdAt: timestamp,
   };
 
-  await db.transaction("rw", db.attempts, async () => {
+  await db.transaction("rw", db.attempts, db.strengthSets, async () => {
     const activeAttempt = await getActiveAttempt(sessionId);
     if (activeAttempt) {
       throw new Error("Finish or cancel the active attempt first.");
+    }
+    const activeStrengthSet = await getActiveStrengthSet(sessionId);
+    if (activeStrengthSet) {
+      throw new Error("Finish or cancel the active strength set first.");
     }
     await db.attempts.add(attempt);
   });
 
   return attempt;
+}
+
+export async function startStrengthSet(
+  sessionId: string,
+  input: Pick<StrengthSetUpdate, "name" | "weight" | "reps" | "workDurationSeconds">,
+): Promise<StrengthSet> {
+  const session = await db.sessions.get(sessionId);
+  if (!session) {
+    throw new Error("Cannot start a strength set for a missing session.");
+  }
+  if (session.endedAt) {
+    throw new Error("Cannot start a strength set for an ended session.");
+  }
+
+  const timestamp = nowIso();
+  const strengthSet: StrengthSet = {
+    id: generateId(),
+    sessionId,
+    name: normalizeRequiredText(input.name ?? "", "Strength set name is required."),
+    startedAt: timestamp,
+    endedAt: null,
+    weight: normalizeOptionalNonNegativeNumber(input.weight ?? null, "Weight"),
+    reps: normalizeOptionalNonNegativeInteger(input.reps ?? null, "Reps"),
+    workDurationSeconds: normalizeOptionalNonNegativeNumber(input.workDurationSeconds ?? null, "Work duration"),
+    memo: null,
+    createdAt: timestamp,
+  };
+
+  await db.transaction("rw", db.attempts, db.strengthSets, async () => {
+    const activeAttempt = await getActiveAttempt(sessionId);
+    if (activeAttempt) {
+      throw new Error("Finish or cancel the active attempt first.");
+    }
+    const activeStrengthSet = await getActiveStrengthSet(sessionId);
+    if (activeStrengthSet) {
+      throw new Error("Finish or cancel the active strength set first.");
+    }
+    await db.strengthSets.add(strengthSet);
+  });
+  return strengthSet;
+}
+
+export async function updateStrengthSet(strengthSetId: string, update: StrengthSetUpdate): Promise<StrengthSet> {
+  const strengthSet = await db.strengthSets.get(strengthSetId);
+  if (!strengthSet) {
+    throw new Error("Strength set does not exist.");
+  }
+
+  const startedAt =
+    update.startedAt === undefined
+      ? strengthSet.startedAt
+      : isIsoDate(update.startedAt)
+        ? new Date(update.startedAt).toISOString()
+        : (() => {
+            throw new Error("Strength set start time is invalid.");
+          })();
+  const endedAt =
+    update.endedAt === undefined
+      ? strengthSet.endedAt
+      : update.endedAt === null
+        ? null
+        : isIsoDate(update.endedAt)
+          ? new Date(update.endedAt).toISOString()
+          : (() => {
+              throw new Error("Strength set end time is invalid.");
+            })();
+  validateStrengthSetTime(startedAt, endedAt);
+
+  const updatedAt = nowIso();
+  const updatedStrengthSet: StrengthSet = {
+    ...strengthSet,
+    name: update.name === undefined ? strengthSet.name : normalizeRequiredText(update.name, "Strength set name is required."),
+    startedAt,
+    endedAt,
+    weight: update.weight === undefined ? strengthSet.weight ?? null : normalizeOptionalNonNegativeNumber(update.weight, "Weight"),
+    reps: update.reps === undefined ? strengthSet.reps ?? null : normalizeOptionalNonNegativeInteger(update.reps, "Reps"),
+    workDurationSeconds:
+      update.workDurationSeconds === undefined
+        ? strengthSet.workDurationSeconds ?? null
+        : normalizeOptionalNonNegativeNumber(update.workDurationSeconds, "Work duration"),
+    effort:
+      update.effort === undefined
+        ? strengthSet.effort ?? null
+        : update.effort === null
+          ? null
+          : validateEffortValue(update.effort),
+    memo: update.memo === undefined ? strengthSet.memo ?? null : normalizeOptionalText(update.memo),
+    updatedAt,
+  };
+
+  await db.strengthSets.update(strengthSetId, {
+    name: updatedStrengthSet.name,
+    startedAt: updatedStrengthSet.startedAt,
+    endedAt: updatedStrengthSet.endedAt,
+    weight: updatedStrengthSet.weight,
+    reps: updatedStrengthSet.reps,
+    workDurationSeconds: updatedStrengthSet.workDurationSeconds,
+    effort: updatedStrengthSet.effort,
+    memo: updatedStrengthSet.memo,
+    updatedAt,
+  });
+  return updatedStrengthSet;
+}
+
+export async function finishStrengthSet(strengthSetId: string): Promise<StrengthSet> {
+  const strengthSet = await db.strengthSets.get(strengthSetId);
+  if (!strengthSet) {
+    throw new Error("Strength set does not exist.");
+  }
+  if (strengthSet.endedAt !== null) {
+    throw new Error("Only an active strength set can be finished.");
+  }
+  return updateStrengthSet(strengthSetId, { endedAt: nowIso() });
+}
+
+export async function cancelStrengthSet(strengthSetId: string): Promise<void> {
+  const strengthSet = await db.strengthSets.get(strengthSetId);
+  if (!strengthSet) {
+    throw new Error("Strength set does not exist.");
+  }
+  if (strengthSet.endedAt !== null) {
+    throw new Error("Only an active strength set can be canceled.");
+  }
+  await db.strengthSets.delete(strengthSetId);
+}
+
+export async function updateStrengthSetMetadata(
+  strengthSetId: string,
+  effort: EffortRating | null,
+  memo?: string | null,
+): Promise<StrengthSet> {
+  return updateStrengthSet(strengthSetId, { effort, memo });
 }
 
 export async function finishAttempt(attemptId: string, result: AttemptResult): Promise<Attempt> {
@@ -1056,7 +1236,7 @@ export async function deleteAttempt(attemptId: string): Promise<void> {
 }
 
 export async function exportAllData(): Promise<DataExport> {
-  const [gyms, boards, grades, wallAngles, sessions, climbs, attempts] = await Promise.all([
+  const [gyms, boards, grades, wallAngles, sessions, climbs, attempts, strengthSets] = await Promise.all([
     db.gyms.toArray(),
     db.boards.toArray(),
     db.grades.toArray(),
@@ -1064,6 +1244,7 @@ export async function exportAllData(): Promise<DataExport> {
     db.sessions.toArray(),
     db.climbs.toArray(),
     db.attempts.toArray(),
+    db.strengthSets.toArray(),
   ]);
 
   return {
@@ -1076,13 +1257,15 @@ export async function exportAllData(): Promise<DataExport> {
     sessions,
     climbs,
     attempts,
+    strengthSets,
   };
 }
 
 export async function restoreAllData(data: unknown): Promise<DataExport> {
   const backup = validateDataExport(data);
 
-  await db.transaction("rw", [db.gyms, db.boards, db.grades, db.wallAngles, db.sessions, db.climbs, db.attempts], async () => {
+  await db.transaction("rw", [db.gyms, db.boards, db.grades, db.wallAngles, db.sessions, db.climbs, db.attempts, db.strengthSets], async () => {
+    await db.strengthSets.clear();
     await db.attempts.clear();
     await db.climbs.clear();
     await db.sessions.clear();
@@ -1097,6 +1280,7 @@ export async function restoreAllData(data: unknown): Promise<DataExport> {
     await db.sessions.bulkAdd(backup.sessions);
     await db.climbs.bulkAdd(backup.climbs);
     await db.attempts.bulkAdd(backup.attempts);
+    await db.strengthSets.bulkAdd(backup.strengthSets);
   });
 
   return backup;
@@ -1117,7 +1301,8 @@ export function validateDataExport(data: unknown): DataExport {
     data.schemaVersion !== 8 &&
     data.schemaVersion !== 9 &&
     data.schemaVersion !== 10 &&
-    data.schemaVersion !== 11
+    data.schemaVersion !== 11 &&
+    data.schemaVersion !== 12
   ) {
     throw new Error("Unsupported backup schema version.");
   }
@@ -1137,7 +1322,9 @@ export function validateDataExport(data: unknown): DataExport {
       data.schemaVersion === 7 ||
       data.schemaVersion === 8 ||
       data.schemaVersion === 9 ||
-      data.schemaVersion === 10) &&
+      data.schemaVersion === 10 ||
+      data.schemaVersion === 11 ||
+      data.schemaVersion === 12) &&
     (!Array.isArray(data.gyms) || !Array.isArray(data.grades))
   ) {
     throw new Error("Backup must include gyms and grades arrays.");
@@ -1148,7 +1335,9 @@ export function validateDataExport(data: unknown): DataExport {
       data.schemaVersion === 7 ||
       data.schemaVersion === 8 ||
       data.schemaVersion === 9 ||
-      data.schemaVersion === 10) &&
+      data.schemaVersion === 10 ||
+      data.schemaVersion === 11 ||
+      data.schemaVersion === 12) &&
     !Array.isArray(data.wallAngles)
   ) {
     throw new Error("Backup must include wallAngles array.");
@@ -1158,16 +1347,22 @@ export function validateDataExport(data: unknown): DataExport {
       data.schemaVersion === 7 ||
       data.schemaVersion === 8 ||
       data.schemaVersion === 9 ||
-      data.schemaVersion === 10) &&
+      data.schemaVersion === 10 ||
+      data.schemaVersion === 11 ||
+      data.schemaVersion === 12) &&
     !Array.isArray(data.boards)
   ) {
     throw new Error("Backup must include boards array.");
+  }
+  if (data.schemaVersion === 12 && !Array.isArray(data.strengthSets)) {
+    throw new Error("Backup must include strengthSets array.");
   }
 
   const rawGyms = Array.isArray(data.gyms) ? data.gyms : [];
   const rawBoards = Array.isArray(data.boards) ? data.boards : [];
   const rawGrades = Array.isArray(data.grades) ? data.grades : [];
   const rawWallAngles = Array.isArray(data.wallAngles) ? data.wallAngles : [];
+  const rawStrengthSets = Array.isArray(data.strengthSets) ? data.strengthSets : [];
   const hasGymMaster =
     data.schemaVersion === 3 ||
     data.schemaVersion === 4 ||
@@ -1176,14 +1371,18 @@ export function validateDataExport(data: unknown): DataExport {
     data.schemaVersion === 7 ||
     data.schemaVersion === 8 ||
     data.schemaVersion === 9 ||
-    data.schemaVersion === 10;
+    data.schemaVersion === 10 ||
+    data.schemaVersion === 11 ||
+    data.schemaVersion === 12;
   const gyms: Gym[] = hasGymMaster ? rawGyms.map(validateGym) : [];
   const boards: Board[] =
     data.schemaVersion === 6 ||
     data.schemaVersion === 7 ||
     data.schemaVersion === 8 ||
     data.schemaVersion === 9 ||
-    data.schemaVersion === 10
+    data.schemaVersion === 10 ||
+    data.schemaVersion === 11 ||
+    data.schemaVersion === 12
       ? rawBoards.map(validateBoard)
       : [];
   const grades: Grade[] = hasGymMaster ? rawGrades.map(validateGrade) : [];
@@ -1193,12 +1392,15 @@ export function validateDataExport(data: unknown): DataExport {
     data.schemaVersion === 7 ||
     data.schemaVersion === 8 ||
     data.schemaVersion === 9 ||
-    data.schemaVersion === 10
+    data.schemaVersion === 10 ||
+    data.schemaVersion === 11 ||
+    data.schemaVersion === 12
       ? rawWallAngles.map(validateWallAngle)
       : [];
   const sessions: Session[] = data.sessions.map(validateSession);
   const climbs: Climb[] = data.climbs.map(validateClimb);
   const attempts: Attempt[] = data.attempts.map(validateAttempt);
+  const strengthSets: StrengthSet[] = data.schemaVersion === 12 ? rawStrengthSets.map(validateStrengthSet) : [];
   const gymIds = new Set(gyms.map((gym) => gym.id));
   const boardIds = new Set(boards.map((board) => board.id));
   const gradeById = new Map(grades.map((grade) => [grade.id, grade]));
@@ -1226,6 +1428,9 @@ export function validateDataExport(data: unknown): DataExport {
   }
   if (new Set(attempts.map((attempt) => attempt.id)).size !== attempts.length) {
     throw new Error("Backup contains duplicate attempt ids.");
+  }
+  if (new Set(strengthSets.map((strengthSet) => strengthSet.id)).size !== strengthSets.length) {
+    throw new Error("Backup contains duplicate strength set ids.");
   }
 
   for (const grade of grades) {
@@ -1295,6 +1500,12 @@ export function validateDataExport(data: unknown): DataExport {
     }
   }
 
+  for (const strengthSet of strengthSets) {
+    if (!sessionIds.has(strengthSet.sessionId)) {
+      throw new Error("Backup contains a strength set for a missing session.");
+    }
+  }
+
   return {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     exportedAt: data.exportedAt,
@@ -1305,6 +1516,7 @@ export function validateDataExport(data: unknown): DataExport {
     sessions,
     climbs,
     attempts,
+    strengthSets,
   };
 }
 
@@ -1842,6 +2054,36 @@ function validateAttempt(value: unknown): Attempt {
   return attempt;
 }
 
+function validateStrengthSet(value: unknown): StrengthSet {
+  if (!isRecord(value)) {
+    throw new Error("Backup strength set is invalid.");
+  }
+  const startedAt = readIsoString(value, "startedAt");
+  const endedAt = readOptionalNullableIsoString(value, "endedAt");
+  validateStrengthSetTime(startedAt, endedAt);
+  const strengthSet: StrengthSet = {
+    id: readString(value, "id"),
+    sessionId: readString(value, "sessionId"),
+    name: normalizeRequiredText(readString(value, "name"), "Strength set name is required."),
+    startedAt,
+    endedAt,
+    weight: normalizeOptionalNonNegativeNumber(readOptionalNumber(value, "weight") ?? null, "Weight"),
+    reps: normalizeOptionalNonNegativeInteger(readOptionalNumber(value, "reps") ?? null, "Reps"),
+    workDurationSeconds: normalizeOptionalNonNegativeNumber(readOptionalNumber(value, "workDurationSeconds") ?? null, "Work duration"),
+    memo: readOptionalNullableString(value, "memo"),
+    createdAt: readIsoString(value, "createdAt"),
+  };
+  const effort = readOptionalNumber(value, "effort");
+  if (effort !== undefined) {
+    strengthSet.effort = validateEffortValue(effort);
+  }
+  const updatedAt = readOptionalIsoString(value, "updatedAt");
+  if (updatedAt) {
+    strengthSet.updatedAt = updatedAt;
+  }
+  return strengthSet;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -1954,6 +2196,38 @@ function validateEffortValue(value: number): AttemptEffort {
     throw new Error("Attempt effort must be between 1 and 7.");
   }
   return value as AttemptEffort;
+}
+
+function normalizeOptionalNonNegativeNumber(value: number | null | undefined, label: string): number | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(`${label} must be a non-negative number.`);
+  }
+  return value;
+}
+
+function normalizeOptionalNonNegativeInteger(value: number | null | undefined, label: string): number | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(`${label} must be a non-negative integer.`);
+  }
+  return value;
+}
+
+function validateStrengthSetTime(startedAt: string, endedAt: string | null) {
+  if (!isIsoDate(startedAt)) {
+    throw new Error("Strength set start time is invalid.");
+  }
+  if (endedAt !== null && !isIsoDate(endedAt)) {
+    throw new Error("Strength set end time is invalid.");
+  }
+  if (endedAt !== null && new Date(endedAt).getTime() < new Date(startedAt).getTime()) {
+    throw new Error("Strength set end time cannot be before start time.");
+  }
 }
 
 function validateWallAngleValue(value: number): number {
