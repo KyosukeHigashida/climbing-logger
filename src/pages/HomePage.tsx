@@ -64,9 +64,16 @@ export function HomePage() {
       return;
     }
 
-    if (activeSessionStore.snapshot?.session.id !== activeSession.id) {
-      void activeSessionStore.refreshSession(activeSession.id);
-    }
+    void activeSessionStore.refreshSession(
+      activeSession.id,
+      activeSessionStore.snapshot?.ui.currentClimbId ?? null,
+      activeSessionStore.snapshot
+        ? {
+            wallType: activeSessionStore.snapshot.ui.currentWallType,
+            wallBoardId: activeSessionStore.snapshot.ui.currentBoardId,
+          }
+        : null,
+    );
     navigate(`/session/${activeSession.id}`);
   }
 
@@ -160,6 +167,7 @@ export function HomePage() {
           <button className="primary full" onClick={() => void handleContinueSession()}>
             CONTINUE SESSION
           </button>
+          <MasterDataActions onAddGym={() => navigate("/gyms")} onAddBoard={() => navigate("/boards")} />
         </section>
       ) : (
         <section className="panel new-session-panel">
@@ -177,12 +185,7 @@ export function HomePage() {
           <button className="primary start-button" onClick={handleStartSession}>
             START SESSION
           </button>
-          <button className="secondary full manage-link-button" onClick={() => navigate("/gyms")}>
-            + Add Gym
-          </button>
-          <button className="secondary full manage-link-button" onClick={() => navigate("/boards")}>
-            + Add Board
-          </button>
+          <MasterDataActions onAddGym={() => navigate("/gyms")} onAddBoard={() => navigate("/boards")} />
         </section>
       )}
 
@@ -268,5 +271,18 @@ export function HomePage() {
         {restoreMessage && <p className="restore-message">{restoreMessage}</p>}
       </section>
     </main>
+  );
+}
+
+function MasterDataActions({ onAddGym, onAddBoard }: { onAddGym: () => void; onAddBoard: () => void }) {
+  return (
+    <div className="master-action-group">
+      <button className="secondary full manage-link-button" onClick={onAddGym}>
+        + Add Gym
+      </button>
+      <button className="secondary full manage-link-button" onClick={onAddBoard}>
+        + Add Board
+      </button>
+    </div>
   );
 }

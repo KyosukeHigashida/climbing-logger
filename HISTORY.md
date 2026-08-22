@@ -126,6 +126,20 @@ Wall angle IDs are no longer the only source of display truth. Climbs also carry
 
 The same owner boundary remains important: gym presets and board presets can share labels or numeric angles, but they are not the same master records. A gym "V4" and a board "V4", or a gym 40 degree angle and a board 40 degree angle, must not collapse into the same identity.
 
+## Active Session And Master Editing
+
+The app is now expected to support master-data editing during an active session. This came from the practical gym workflow: the user may start climbing before the gym or board master is perfectly prepared, then add or simplify grades, boards, and wall angles as real problems require them.
+
+Home is therefore both a return point for the active session and a place to manage Gym and Board masters. An active session should keep its venue, current climb, active attempt, and current wall state when the user leaves to add or edit master data.
+
+New boards, grades, and wall angles added during an active session should appear as choices when returning to the session without requiring a browser reload. Likewise, deleted or archived unused presets should disappear from normal selectors without forcing the user to refresh the page.
+
+When a selected board is archived or deleted, the session should fall back to Gym Wall rather than leaving the user on an unusable wall state. When a selected wall angle or grade is no longer valid for the current wall context, the Current Climb input should reset to a neutral choice such as No angle or Select Grade instead of preserving a stale old value as if it were still selectable.
+
+Historical climbs remain different from draft inputs. Old climbs may still display the grade or angle they were recorded with, using their stored snapshot values if needed. But the Current Climb draft for a new attempt should reflect the currently valid master choices, especially after switching between Gym Wall and a Board.
+
+Continue Session should feel instant, but it must not preserve stale master choices indefinitely. The desired model is warm navigation from the in-memory active session state, plus a background reconciliation with IndexedDB so master edits made from Home or master pages are reflected as soon as possible.
+
 ## Current Out Of Scope
 
 - Authentication

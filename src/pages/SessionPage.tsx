@@ -81,6 +81,7 @@ export function SessionPage() {
   const attempts = snapshot?.attempts ?? [];
   const gyms = snapshot?.gyms ?? [];
   const boards = snapshot?.boards ?? [];
+  const activeBoards = useMemo(() => boards.filter((board) => !board.isArchived), [boards]);
   const grades = snapshot?.grades ?? [];
   const wallAngles = snapshot?.wallAngles ?? [];
   const currentClimbId = snapshot?.ui.currentClimbId ?? null;
@@ -177,6 +178,37 @@ export function SessionPage() {
   }, [selectedClimbForDraft?.id]);
 
   useEffect(() => {
+    setClimbDraft((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const selectedGrade = current.gradeId ? grades.find((grade) => grade.id === current.gradeId) ?? null : null;
+      const hasValidGrade =
+        selectedGrade &&
+        !selectedGrade.isArchived &&
+        ((current.wallType === "board" && selectedGrade.boardId === current.wallBoardId) ||
+          (current.wallType === "gym" && selectedGrade.gymId === (session?.initialGymId ?? null)));
+      const selectedWallAngle = current.wallAnglePresetId
+        ? wallAngles.find((wallAngle) => wallAngle.id === current.wallAnglePresetId) ?? null
+        : null;
+      const hasValidWallAngle = selectedWallAngle && !selectedWallAngle.isArchived;
+
+      if ((current.gradeId === null || hasValidGrade) && (current.wallAnglePresetId === null || hasValidWallAngle)) {
+        return current;
+      }
+
+      return {
+        ...current,
+        grade: current.gradeId && !hasValidGrade ? "Ungraded" : current.grade,
+        gradeId: current.gradeId && !hasValidGrade ? null : current.gradeId,
+        wallAngle: current.wallAnglePresetId && !hasValidWallAngle ? null : current.wallAngle,
+        wallAnglePresetId: current.wallAnglePresetId && !hasValidWallAngle ? null : current.wallAnglePresetId,
+      };
+    });
+  }, [grades, session?.initialGymId, wallAngles]);
+
+  useEffect(() => {
     const nextWallDraft = getWallDraftFromSelection(wallSelection, boards);
     setClimbDraft((current) => {
       if (
@@ -190,6 +222,7 @@ export function SessionPage() {
       return {
         ...current,
         ...nextWallDraft,
+        grade: "Ungraded",
         gradeId: null,
         wallAngle: null,
         wallAnglePresetId: null,
@@ -197,10 +230,36 @@ export function SessionPage() {
     });
   }, [boards, selectedClimbForDraft?.id, wallSelection.wallBoardId, wallSelection.wallType]);
 
+  useEffect(() => {
+    if (
+      wallSelection.wallType === "board" &&
+      wallSelection.wallBoardId &&
+      !activeBoards.some((board) => board.id === wallSelection.wallBoardId)
+    ) {
+      setStoreCurrentWallSelection({ wallType: "gym", wallBoardId: null });
+      setError(null);
+    }
+  }, [activeBoards, setStoreCurrentWallSelection, wallSelection.wallBoardId, wallSelection.wallType]);
+
   const currentClimb = climbs.find((climb) => climb.id === currentClimbId) ?? null;
+  const activeAttempt = attempts.find(isActiveAttempt) ?? null;
+  const currentClimbActiveAttempt = currentClimb
+    ? attempts.find((attempt) => attempt.climbId === currentClimb.id && isActiveAttempt(attempt)) ?? null
+    : null;
+  const hasCompletedAttemptForCurrentClimb = currentClimb
+    ? attempts.some((attempt) => attempt.climbId === currentClimb.id && !isActiveAttempt(attempt))
+    : false;
   const currentClimbAttemptCount = currentClimb ? getAttemptCount(attempts, currentClimb.id) : 0;
   const shouldStartNewClimb =
-    Boolean(currentClimb && climbDraft && currentClimbAttemptCount > 0 && isClimbIdentityDraftDirty(currentClimb, climbDraft));
+    Boolean(
+      currentClimb &&
+        climbDraft &&
+        shouldTreatIdentityDraftAsNewClimb(
+          isClimbIdentityDraftDirty(currentClimb, climbDraft),
+          hasCompletedAttemptForCurrentClimb,
+          Boolean(currentClimbActiveAttempt),
+        ),
+    );
 
   useEffect(() => {
     if (!currentClimb || !climbDraft) {
@@ -211,11 +270,12 @@ export function SessionPage() {
     if (!identityDirty && !memoDirty) {
       return;
     }
-    if (currentClimbAttemptCount > 0 && !memoDirty) {
+    const canUpdateIdentity = canAutosaveClimbIdentity(hasCompletedAttemptForCurrentClimb, Boolean(currentClimbActiveAttempt));
+    if (identityDirty && !canUpdateIdentity && !memoDirty) {
       return;
     }
     const timeoutId = window.setTimeout(() => {
-      const updateSource = currentClimbAttemptCount === 0 ? climbDraft : createClimbDraft(currentClimb);
+      const updateSource = identityDirty && canUpdateIdentity ? climbDraft : createClimbDraft(currentClimb);
       void updateClimb(
         currentClimb.id,
         updateSource.grade.trim() || "Ungraded",
@@ -228,7 +288,10 @@ export function SessionPage() {
         updateSource.wallBoardId,
         normalizeDraftMemo(climbDraft.memo),
       )
-        .then(upsertClimb)
+        .then((updatedClimb) => {
+          upsertClimb(updatedClimb);
+          setError(null);
+        })
         .catch((err) => {
           setError(err instanceof Error ? err.message : "Could not update climb.");
         });
@@ -237,7 +300,8 @@ export function SessionPage() {
   }, [
     climbDraft,
     currentClimb,
-    currentClimbAttemptCount,
+    currentClimbActiveAttempt,
+    hasCompletedAttemptForCurrentClimb,
     session?.initialGymId,
     upsertClimb,
   ]);
@@ -272,8 +336,6 @@ export function SessionPage() {
   const venueWallAngles = wallAngles
     .filter((wallAngle) => wallAngle.gymId === (activeSession.initialGymId ?? null) && !wallAngle.isArchived)
     .sort((a, b) => a.order - b.order);
-  const activeAttempt = attempts.find(isActiveAttempt) ?? null;
-  const currentClimbActiveAttempt = activeAttempt && currentClimb?.id === activeAttempt.climbId ? activeAttempt : null;
   const pendingEffortAttempt = pendingEffortAttemptId
     ? attempts.find((attempt) => attempt.id === pendingEffortAttemptId) ?? null
     : null;
@@ -380,7 +442,7 @@ export function SessionPage() {
     try {
       let targetClimbId = currentClimb.id;
       if (isClimbIdentityDraftDirty(currentClimb, climbDraft)) {
-        if (currentClimbAttemptCount === 0) {
+        if (!hasCompletedAttemptForCurrentClimb) {
           const updatedClimb = await updateClimb(
             currentClimb.id,
             climbDraft.grade.trim() || "Ungraded",
@@ -518,6 +580,7 @@ export function SessionPage() {
           <select
             value={wallSelection.wallType === "gym" ? "gym" : `board:${wallSelection.wallBoardId}`}
             onChange={(event) => {
+              setError(null);
               if (event.target.value === "gym") {
                 setStoreCurrentWallSelection({ wallType: "gym", wallBoardId: null });
                 return;
@@ -526,8 +589,8 @@ export function SessionPage() {
             }}
           >
             <option value="gym">Gym Wall</option>
-            {boards.length > 0 && <option disabled>────────</option>}
-            {boards.map((board) => (
+            {activeBoards.length > 0 && <option disabled>────────</option>}
+            {activeBoards.map((board) => (
               <option key={board.id} value={`board:${board.id}`}>
                 {board.name}
               </option>
@@ -611,7 +674,7 @@ export function SessionPage() {
                       onChange={(event) => setPendingAttemptNote(event.target.value)}
                     />
                   </label>
-                  <button className="secondary full" disabled={Boolean(finishingAttemptId)} onClick={handleSavePendingEffort}>
+                  <button className="primary full" disabled={Boolean(finishingAttemptId)} onClick={handleSavePendingEffort}>
                     Save
                   </button>
                 </div>
@@ -930,6 +993,18 @@ function getGradeSelectValue(
     return gradeId;
   }
   return gradeLabel.trim() && gradeLabel.trim() !== "Ungraded" ? SNAPSHOT_GRADE_OPTION_ID : "";
+}
+
+export function canAutosaveClimbIdentity(hasCompletedAttempt: boolean, hasActiveAttempt: boolean): boolean {
+  return !hasCompletedAttempt || hasActiveAttempt;
+}
+
+export function shouldTreatIdentityDraftAsNewClimb(
+  identityDirty: boolean,
+  hasCompletedAttempt: boolean,
+  hasActiveAttempt: boolean,
+): boolean {
+  return identityDirty && hasCompletedAttempt && !hasActiveAttempt;
 }
 
 export function getWallAngleOptionsForSelect(

@@ -4,7 +4,7 @@ import {
   loadCurrentActiveSessionSnapshot,
   type ActiveSessionSnapshot,
 } from "../db/repository";
-import type { Attempt, Climb, WallAngle } from "../types/domain";
+import type { Attempt, Board, Climb, Grade, WallAngle } from "../types/domain";
 import type { SavedWallSelection } from "../utils/currentClimb";
 
 type ActiveSessionContextValue = {
@@ -21,7 +21,12 @@ type ActiveSessionContextValue = {
   setCurrentWallSelection: (wallSelection: SavedWallSelection) => void;
   upsertClimb: (climb: Climb) => void;
   upsertAttempt: (attempt: Attempt) => void;
+  upsertBoard: (board: Board) => void;
+  removeBoard: (boardId: string) => void;
+  upsertGrade: (grade: Grade) => void;
+  removeGrade: (gradeId: string) => void;
   upsertWallAngle: (wallAngle: WallAngle) => void;
+  removeWallAngle: (wallAngleId: string) => void;
   removeAttempt: (attemptId: string) => void;
 };
 
@@ -115,6 +120,53 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
     setSnapshot((current) => (current ? { ...current, attempts: current.attempts.filter((attempt) => attempt.id !== attemptId) } : current));
   }, []);
 
+  const upsertBoard = useCallback((board: Board) => {
+    setSnapshot((current) => {
+      if (!current) {
+        return current;
+      }
+      const boards = current.boards.some((item) => item.id === board.id)
+        ? current.boards.map((item) => (item.id === board.id ? board : item))
+        : [...current.boards, board];
+      return { ...current, boards };
+    });
+  }, []);
+
+  const removeBoard = useCallback((boardId: string) => {
+    setSnapshot((current) => {
+      if (!current || !current.boards.some((board) => board.id === boardId)) {
+        return current;
+      }
+      const boards = current.boards.filter((board) => board.id !== boardId);
+      const ui =
+        current.ui.currentWallType === "board" && current.ui.currentBoardId === boardId
+          ? { ...current.ui, currentWallType: "gym" as const, currentBoardId: null }
+          : current.ui;
+      return { ...current, boards, ui };
+    });
+  }, []);
+
+  const upsertGrade = useCallback((grade: Grade) => {
+    setSnapshot((current) => {
+      if (!current) {
+        return current;
+      }
+      const grades = current.grades.some((item) => item.id === grade.id)
+        ? current.grades.map((item) => (item.id === grade.id ? grade : item))
+        : [...current.grades, grade];
+      return { ...current, grades };
+    });
+  }, []);
+
+  const removeGrade = useCallback((gradeId: string) => {
+    setSnapshot((current) => {
+      if (!current || !current.grades.some((grade) => grade.id === gradeId)) {
+        return current;
+      }
+      return { ...current, grades: current.grades.filter((grade) => grade.id !== gradeId) };
+    });
+  }, []);
+
   const upsertWallAngle = useCallback((wallAngle: WallAngle) => {
     setSnapshot((current) => {
       if (!current) {
@@ -124,6 +176,15 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
         ? current.wallAngles.map((item) => (item.id === wallAngle.id ? wallAngle : item))
         : [...current.wallAngles, wallAngle];
       return { ...current, wallAngles };
+    });
+  }, []);
+
+  const removeWallAngle = useCallback((wallAngleId: string) => {
+    setSnapshot((current) => {
+      if (!current || !current.wallAngles.some((wallAngle) => wallAngle.id === wallAngleId)) {
+        return current;
+      }
+      return { ...current, wallAngles: current.wallAngles.filter((wallAngle) => wallAngle.id !== wallAngleId) };
     });
   }, []);
 
@@ -159,7 +220,12 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
       setCurrentWallSelection,
       upsertClimb,
       upsertAttempt,
+      upsertBoard,
+      removeBoard,
+      upsertGrade,
+      removeGrade,
       upsertWallAngle,
+      removeWallAngle,
       removeAttempt,
     }),
     [
@@ -167,12 +233,17 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
       isHydrating,
       refreshCurrentActiveSession,
       refreshSession,
+      removeBoard,
       removeAttempt,
+      removeGrade,
+      removeWallAngle,
       setCurrentClimbId,
       setCurrentWallSelection,
       snapshot,
       upsertAttempt,
+      upsertBoard,
       upsertClimb,
+      upsertGrade,
       upsertWallAngle,
     ],
   );

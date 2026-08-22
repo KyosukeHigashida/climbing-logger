@@ -724,6 +724,30 @@ describe("repository", () => {
     expect(cleared?.memo).toBeNull();
   });
 
+  it("keeps an active attempt attached to the same climb when the climb identity is corrected", async () => {
+    const gym = await createGym("BETA");
+    const grade = await createGrade(gym.id, "2Q");
+    const angle = await createWallAngle(gym.id, 120);
+    const session = await createSession(gym.id);
+    const climb = await createClimb(session.id, grade.label, "Yellow", gym.id, grade.id, null, null);
+    const attempt = await startAttempt(session.id, climb.id);
+
+    await updateClimb(climb.id, grade.label, "Yellow #12", gym.id, grade.id, angle.angle, angle.id);
+
+    expect(await db.climbs.get(climb.id)).toMatchObject({
+      id: climb.id,
+      name: "Yellow #12",
+      wallAngle: 120,
+      wallAnglePresetId: angle.id,
+    });
+    expect(await db.attempts.get(attempt.id)).toMatchObject({
+      id: attempt.id,
+      climbId: climb.id,
+      endedAt: null,
+      result: null,
+    });
+  });
+
   it("deletes only the target attempt and derived values recalculate from remaining raw attempts", async () => {
     setNow("2026-08-17T09:00:00.000Z");
     const session = await createSession();

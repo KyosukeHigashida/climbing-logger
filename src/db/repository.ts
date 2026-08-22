@@ -296,25 +296,36 @@ export async function replaceBoardGrades(boardId: string, labels: string[]): Pro
   return replaceGradeRecords({ type: "board", id: boardId }, labels);
 }
 
-export async function updateGrade(gradeId: string, label: string): Promise<void> {
+export async function updateGrade(gradeId: string, label: string): Promise<Grade> {
   const grade = await db.grades.get(gradeId);
   if (!grade) {
     throw new Error("Grade does not exist.");
   }
+
+  const updatedAt = nowIso();
+  const updatedGrade: Grade = {
+    ...grade,
+    label: normalizeRequiredText(label, "Grade label is required."),
+    updatedAt,
+  };
 
   await db.grades.update(gradeId, {
-    label: normalizeRequiredText(label, "Grade label is required."),
-    updatedAt: nowIso(),
+    label: updatedGrade.label,
+    updatedAt,
   });
+  return updatedGrade;
 }
 
-export async function archiveGrade(gradeId: string, isArchived = true): Promise<void> {
+export async function archiveGrade(gradeId: string, isArchived = true): Promise<Grade> {
   const grade = await db.grades.get(gradeId);
   if (!grade) {
     throw new Error("Grade does not exist.");
   }
 
-  await db.grades.update(gradeId, { isArchived, updatedAt: nowIso() });
+  const updatedAt = nowIso();
+  const updatedGrade: Grade = { ...grade, isArchived, updatedAt };
+  await db.grades.update(gradeId, { isArchived, updatedAt });
+  return updatedGrade;
 }
 
 export async function deleteGrade(gradeId: string): Promise<void> {
@@ -429,16 +440,28 @@ export async function createBoardWallAngle(boardId: string, angle: number): Prom
   return wallAngle;
 }
 
-export async function updateWallAngle(wallAngleId: string, angle: number): Promise<void> {
+export async function updateWallAngle(wallAngleId: string, angle: number): Promise<WallAngle> {
   const wallAngle = await db.wallAngles.get(wallAngleId);
   if (!wallAngle) {
     throw new Error("Wall angle does not exist.");
   }
 
-  await db.wallAngles.update(wallAngleId, { angle: validateWallAngleValue(angle), isArchived: false, updatedAt: nowIso() });
+  const updatedAt = nowIso();
+  const updatedWallAngle: WallAngle = {
+    ...wallAngle,
+    angle: validateWallAngleValue(angle),
+    isArchived: false,
+    updatedAt,
+  };
+  await db.wallAngles.update(wallAngleId, {
+    angle: updatedWallAngle.angle,
+    isArchived: false,
+    updatedAt,
+  });
+  return updatedWallAngle;
 }
 
-export async function deleteWallAngle(wallAngleId: string): Promise<void> {
+export async function deleteWallAngle(wallAngleId: string): Promise<WallAngle | null> {
   const wallAngle = await db.wallAngles.get(wallAngleId);
   if (!wallAngle) {
     throw new Error("Wall angle does not exist.");
@@ -446,11 +469,14 @@ export async function deleteWallAngle(wallAngleId: string): Promise<void> {
 
   const climbCount = await db.climbs.where("wallAnglePresetId").equals(wallAngleId).count();
   if (climbCount > 0) {
-    await db.wallAngles.update(wallAngleId, { isArchived: true, updatedAt: nowIso() });
-    return;
+    const updatedAt = nowIso();
+    const archivedWallAngle: WallAngle = { ...wallAngle, isArchived: true, updatedAt };
+    await db.wallAngles.update(wallAngleId, { isArchived: true, updatedAt });
+    return archivedWallAngle;
   }
 
   await db.wallAngles.delete(wallAngleId);
+  return null;
 }
 
 export async function reorderWallAngles(gymId: string, orderedWallAngleIds: string[]): Promise<void> {

@@ -1,6 +1,7 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { type FormEvent, type PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { useActiveSession } from "../context/ActiveSessionContext";
 import {
   archiveBoard,
   archiveGrade,
@@ -44,6 +45,7 @@ export function GymsPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const isBoardMode = location.pathname.startsWith("/boards");
+  const { upsertBoard, removeBoard, upsertGrade, removeGrade, upsertWallAngle, removeWallAngle } = useActiveSession();
   const gyms = useLiveQuery(() => getAllGyms(), []);
   const boards = useLiveQuery<Board[]>(() => getAllBoards(), []);
   const grades = useLiveQuery<Grade[]>(
@@ -93,6 +95,7 @@ export function GymsPage() {
     event.preventDefault();
     try {
       const board = await createBoard(newGymName);
+      upsertBoard(board);
       setNewGymName("");
       navigate(`/boards/${board.id}`);
     } catch (err) {
@@ -156,6 +159,10 @@ export function GymsPage() {
           wallAngles={wallAngles}
           sessionUseCount={sessions.filter((session) => session.initialGymId === selectedGym.id).length}
           climbUseCount={climbs.filter((climb) => climb.gymId === selectedGym.id).length}
+          onGradeChanged={upsertGrade}
+          onGradeRemoved={removeGrade}
+          onWallAngleChanged={upsertWallAngle}
+          onWallAngleRemoved={removeWallAngle}
           onDeleted={() => navigate("/gyms")}
         />
       )}
@@ -167,6 +174,11 @@ export function GymsPage() {
           grades={grades}
           wallAngles={wallAngles}
           climbUseCount={climbs.filter((climb) => climb.wallBoardId === selectedBoard.id).length}
+          onGradeChanged={upsertGrade}
+          onGradeRemoved={removeGrade}
+          onWallAngleChanged={upsertWallAngle}
+          onWallAngleRemoved={removeWallAngle}
+          onBoardDeleted={removeBoard}
           onDeleted={() => navigate("/boards")}
         />
       )}
@@ -180,6 +192,10 @@ type GymEditorProps = {
   wallAngles: WallAngle[];
   sessionUseCount: number;
   climbUseCount: number;
+  onGradeChanged: (grade: Grade) => void;
+  onGradeRemoved: (gradeId: string) => void;
+  onWallAngleChanged: (wallAngle: WallAngle) => void;
+  onWallAngleRemoved: (wallAngleId: string) => void;
   onDeleted: () => void;
 };
 
@@ -188,10 +204,26 @@ type BoardEditorProps = {
   grades: Grade[];
   wallAngles: WallAngle[];
   climbUseCount: number;
+  onGradeChanged: (grade: Grade) => void;
+  onGradeRemoved: (gradeId: string) => void;
+  onWallAngleChanged: (wallAngle: WallAngle) => void;
+  onWallAngleRemoved: (wallAngleId: string) => void;
+  onBoardDeleted: (boardId: string) => void;
   onDeleted: () => void;
 };
 
-function BoardEditor({ board, grades, wallAngles, climbUseCount, onDeleted }: BoardEditorProps) {
+function BoardEditor({
+  board,
+  grades,
+  wallAngles,
+  climbUseCount,
+  onGradeChanged,
+  onGradeRemoved,
+  onWallAngleChanged,
+  onWallAngleRemoved,
+  onBoardDeleted,
+  onDeleted,
+}: BoardEditorProps) {
   const [name, setName] = useState(board.name);
   const [newGradeLabel, setNewGradeLabel] = useState("");
   const [newAngleValue, setNewAngleValue] = useState("");
@@ -249,12 +281,13 @@ function BoardEditor({ board, grades, wallAngles, climbUseCount, onDeleted }: Bo
   async function handleSaveChanges() {
     try {
       await updateBoard(board.id, name);
-      await Promise.all(
+      const updatedGrades = await Promise.all(
         grades
           .filter((grade) => (gradeLabels[grade.id] ?? grade.label).trim() !== grade.label)
           .map((grade) => updateGrade(grade.id, gradeLabels[grade.id] ?? grade.label)),
       );
-      await Promise.all(
+      updatedGrades.forEach(onGradeChanged);
+      const updatedWallAngles = await Promise.all(
         wallAngles
           .filter((angle) => (angleValues[angle.id] ?? angle.angle.toString()).trim() !== angle.angle.toString())
           .map((angle) => {
@@ -266,6 +299,7 @@ function BoardEditor({ board, grades, wallAngles, climbUseCount, onDeleted }: Bo
             return updateWallAngle(angle.id, parsedAngle);
           }),
       );
+      updatedWallAngles.forEach(onWallAngleChanged);
       setMessage("Changes saved.");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Could not save changes.");
@@ -275,7 +309,8 @@ function BoardEditor({ board, grades, wallAngles, climbUseCount, onDeleted }: Bo
   async function handleAddGrade(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
-      await createBoardGrade(board.id, newGradeLabel);
+      const grade = await createBoardGrade(board.id, newGradeLabel);
+      onGradeChanged(grade);
       setNewGradeLabel("");
       setMessage(null);
     } catch (err) {
@@ -290,6 +325,14 @@ function BoardEditor({ board, grades, wallAngles, climbUseCount, onDeleted }: Bo
     }
     try {
       await replaceBoardGrades(board.id, preset.labels);
+      const nextGrades = await getBoardGrades(board.id, true);
+      const nextGradeIds = new Set(nextGrades.map((grade) => grade.id));
+      nextGrades.forEach(onGradeChanged);
+      grades.forEach((grade) => {
+        if (!nextGradeIds.has(grade.id)) {
+          onGradeRemoved(grade.id);
+        }
+      });
       setMessage("Grade preset loaded.");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Could not load grade preset.");
@@ -303,7 +346,8 @@ function BoardEditor({ board, grades, wallAngles, climbUseCount, onDeleted }: Bo
       if (!newAngleValue.trim() || !Number.isFinite(parsedAngle)) {
         throw new Error("Wall angle must be a number.");
       }
-      await createBoardWallAngle(board.id, parsedAngle);
+      const wallAngle = await createBoardWallAngle(board.id, parsedAngle);
+      onWallAngleChanged(wallAngle);
       setNewAngleValue("");
       setMessage(null);
     } catch (err) {
@@ -318,6 +362,14 @@ function BoardEditor({ board, grades, wallAngles, climbUseCount, onDeleted }: Bo
     }
     try {
       await replaceBoardWallAngles(board.id, preset.angles);
+      const nextWallAngles = await getBoardWallAngles(board.id, true);
+      const nextWallAngleIds = new Set(nextWallAngles.map((angle) => angle.id));
+      nextWallAngles.forEach(onWallAngleChanged);
+      wallAngles.forEach((angle) => {
+        if (!nextWallAngleIds.has(angle.id)) {
+          onWallAngleRemoved(angle.id);
+        }
+      });
       setMessage("Angle preset loaded.");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Could not load angle preset.");
@@ -420,6 +472,7 @@ function BoardEditor({ board, grades, wallAngles, climbUseCount, onDeleted }: Bo
     }
     try {
       await deleteBoard(board.id);
+      onBoardDeleted(board.id);
       onDeleted();
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Could not delete board.");
@@ -467,6 +520,8 @@ function BoardEditor({ board, grades, wallAngles, climbUseCount, onDeleted }: Bo
               onDragEnd={handleGradePointerUp}
               onToggleMenu={() => setOpenGradeMenuId((current) => (current === grade.id ? null : grade.id))}
               onCloseMenu={() => setOpenGradeMenuId(null)}
+              onGradeChanged={onGradeChanged}
+              onGradeRemoved={onGradeRemoved}
               onMessage={setMessage}
             />
           ))
@@ -509,6 +564,8 @@ function BoardEditor({ board, grades, wallAngles, climbUseCount, onDeleted }: Bo
               onDragEnd={handleAnglePointerUp}
               onToggleMenu={() => setOpenAngleMenuId((current) => (current === angle.id ? null : angle.id))}
               onCloseMenu={() => setOpenAngleMenuId(null)}
+              onWallAngleChanged={onWallAngleChanged}
+              onWallAngleRemoved={onWallAngleRemoved}
               onMessage={setMessage}
             />
           ))
@@ -537,7 +594,18 @@ function BoardEditor({ board, grades, wallAngles, climbUseCount, onDeleted }: Bo
   );
 }
 
-function GymEditor({ gym, grades, wallAngles, sessionUseCount, climbUseCount, onDeleted }: GymEditorProps) {
+function GymEditor({
+  gym,
+  grades,
+  wallAngles,
+  sessionUseCount,
+  climbUseCount,
+  onGradeChanged,
+  onGradeRemoved,
+  onWallAngleChanged,
+  onWallAngleRemoved,
+  onDeleted,
+}: GymEditorProps) {
   const [name, setName] = useState(gym.name);
   const [newGradeLabel, setNewGradeLabel] = useState("");
   const [newAngleValue, setNewAngleValue] = useState("");
@@ -595,12 +663,13 @@ function GymEditor({ gym, grades, wallAngles, sessionUseCount, climbUseCount, on
   async function handleSaveChanges() {
     try {
       await updateGym(gym.id, name);
-      await Promise.all(
+      const updatedGrades = await Promise.all(
         grades
           .filter((grade) => (gradeLabels[grade.id] ?? grade.label).trim() !== grade.label)
           .map((grade) => updateGrade(grade.id, gradeLabels[grade.id] ?? grade.label)),
       );
-      await Promise.all(
+      updatedGrades.forEach(onGradeChanged);
+      const updatedWallAngles = await Promise.all(
         wallAngles
           .filter((angle) => (angleValues[angle.id] ?? angle.angle.toString()).trim() !== angle.angle.toString())
           .map((angle) => {
@@ -612,6 +681,7 @@ function GymEditor({ gym, grades, wallAngles, sessionUseCount, climbUseCount, on
             return updateWallAngle(angle.id, parsedAngle);
           }),
       );
+      updatedWallAngles.forEach(onWallAngleChanged);
       setMessage("Changes saved.");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Could not save changes.");
@@ -621,7 +691,8 @@ function GymEditor({ gym, grades, wallAngles, sessionUseCount, climbUseCount, on
   async function handleAddGrade(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
-      await createGrade(gym.id, newGradeLabel);
+      const grade = await createGrade(gym.id, newGradeLabel);
+      onGradeChanged(grade);
       setNewGradeLabel("");
       setMessage(null);
     } catch (err) {
@@ -639,6 +710,14 @@ function GymEditor({ gym, grades, wallAngles, sessionUseCount, climbUseCount, on
     }
     try {
       await replaceGymGrades(gym.id, preset.labels);
+      const nextGrades = await getGymGrades(gym.id, true);
+      const nextGradeIds = new Set(nextGrades.map((grade) => grade.id));
+      nextGrades.forEach(onGradeChanged);
+      grades.forEach((grade) => {
+        if (!nextGradeIds.has(grade.id)) {
+          onGradeRemoved(grade.id);
+        }
+      });
       setMessage("Grade preset loaded.");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Could not load grade preset.");
@@ -652,7 +731,8 @@ function GymEditor({ gym, grades, wallAngles, sessionUseCount, climbUseCount, on
       if (!newAngleValue.trim() || !Number.isFinite(parsedAngle)) {
         throw new Error("Wall angle must be a number.");
       }
-      await createWallAngle(gym.id, parsedAngle);
+      const wallAngle = await createWallAngle(gym.id, parsedAngle);
+      onWallAngleChanged(wallAngle);
       setNewAngleValue("");
       setMessage(null);
     } catch (err) {
@@ -670,6 +750,14 @@ function GymEditor({ gym, grades, wallAngles, sessionUseCount, climbUseCount, on
     }
     try {
       await replaceGymWallAngles(gym.id, preset.angles);
+      const nextWallAngles = await getGymWallAngles(gym.id, true);
+      const nextWallAngleIds = new Set(nextWallAngles.map((angle) => angle.id));
+      nextWallAngles.forEach(onWallAngleChanged);
+      wallAngles.forEach((angle) => {
+        if (!nextWallAngleIds.has(angle.id)) {
+          onWallAngleRemoved(angle.id);
+        }
+      });
       setMessage("Angle preset loaded.");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Could not load angle preset.");
@@ -823,6 +911,8 @@ function GymEditor({ gym, grades, wallAngles, sessionUseCount, climbUseCount, on
               onDragEnd={handleGradePointerUp}
               onToggleMenu={() => setOpenGradeMenuId((current) => (current === grade.id ? null : grade.id))}
               onCloseMenu={() => setOpenGradeMenuId(null)}
+              onGradeChanged={onGradeChanged}
+              onGradeRemoved={onGradeRemoved}
               onMessage={setMessage}
             />
           ))
@@ -869,6 +959,8 @@ function GymEditor({ gym, grades, wallAngles, sessionUseCount, climbUseCount, on
               onDragEnd={handleAnglePointerUp}
               onToggleMenu={() => setOpenAngleMenuId((current) => (current === angle.id ? null : angle.id))}
               onCloseMenu={() => setOpenAngleMenuId(null)}
+              onWallAngleChanged={onWallAngleChanged}
+              onWallAngleRemoved={onWallAngleRemoved}
               onMessage={setMessage}
             />
           ))
@@ -915,6 +1007,8 @@ type GradeRowProps = {
   onDragEnd: () => void;
   onToggleMenu: () => void;
   onCloseMenu: () => void;
+  onGradeChanged: (grade: Grade) => void;
+  onGradeRemoved: (gradeId: string) => void;
   onMessage: (message: string | null) => void;
 };
 
@@ -929,11 +1023,14 @@ function GradeRow({
   onDragEnd,
   onToggleMenu,
   onCloseMenu,
+  onGradeChanged,
+  onGradeRemoved,
   onMessage,
 }: GradeRowProps) {
   async function handleArchive() {
     try {
-      await archiveGrade(grade.id, !grade.isArchived);
+      const updatedGrade = await archiveGrade(grade.id, !grade.isArchived);
+      onGradeChanged(updatedGrade);
       onCloseMenu();
     } catch (err) {
       onMessage(err instanceof Error ? err.message : "Could not update grade.");
@@ -943,6 +1040,7 @@ function GradeRow({
   async function handleDelete() {
     try {
       await deleteGrade(grade.id);
+      onGradeRemoved(grade.id);
       onCloseMenu();
     } catch (err) {
       onMessage(err instanceof Error ? err.message : "Could not delete grade.");
@@ -1002,6 +1100,8 @@ type AngleRowProps = {
   onDragEnd: () => void;
   onToggleMenu: () => void;
   onCloseMenu: () => void;
+  onWallAngleChanged: (wallAngle: WallAngle) => void;
+  onWallAngleRemoved: (wallAngleId: string) => void;
   onMessage: (message: string | null) => void;
 };
 
@@ -1016,11 +1116,18 @@ function AngleRow({
   onDragEnd,
   onToggleMenu,
   onCloseMenu,
+  onWallAngleChanged,
+  onWallAngleRemoved,
   onMessage,
 }: AngleRowProps) {
   async function handleDelete() {
     try {
-      await deleteWallAngle(angle.id);
+      const deletedResult = await deleteWallAngle(angle.id);
+      if (deletedResult) {
+        onWallAngleChanged(deletedResult);
+      } else {
+        onWallAngleRemoved(angle.id);
+      }
       onCloseMenu();
     } catch (err) {
       onMessage(err instanceof Error ? err.message : "Could not delete angle.");

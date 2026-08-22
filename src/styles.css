@@ -687,6 +687,12 @@ h2 {
   min-height: 44px;
 }
 
+.master-action-group {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .session-header-actions {
   display: grid;
   justify-items: end;
