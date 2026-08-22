@@ -24,6 +24,7 @@ describe("ActiveSessionProvider", () => {
     await waitFor(() => expect(result.current.isHydrating).toBe(false));
     expect(result.current.snapshot?.session.id).toBe(session.id);
     expect(result.current.snapshot?.ui.currentClimbId).toBe(climb.id);
+    expect(result.current.snapshot?.ui.currentActivityType).toBe("climb");
   });
 
   it("updates and clears the in-memory active session snapshot", async () => {
@@ -48,6 +49,24 @@ describe("ActiveSessionProvider", () => {
       result.current.clearSnapshot();
     });
     expect(result.current.snapshot).toBeNull();
+  });
+
+  it("preserves currentActivityType during warm refreshSession", async () => {
+    const session = await createSession();
+    const climb = await createClimb(session.id, "2Q", "A");
+
+    const { result } = renderHook(() => useActiveSession(), { wrapper });
+    await waitFor(() => expect(result.current.isHydrating).toBe(false));
+
+    act(() => {
+      result.current.setCurrentActivityType("training");
+    });
+    expect(result.current.snapshot?.ui.currentActivityType).toBe("training");
+
+    await act(async () => {
+      await result.current.refreshSession(session.id, climb.id);
+    });
+    expect(result.current.snapshot?.ui.currentActivityType).toBe("training");
   });
 
   it("upserts master board and wall angle records without changing active session state", async () => {

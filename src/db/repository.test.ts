@@ -55,7 +55,7 @@ import {
   updateWallAngle,
   validateDataExport,
 } from "./repository";
-import type { Climb, Session } from "../types/domain";
+import type { Climb, Session, StrengthSet } from "../types/domain";
 import { getAttemptCount, getFailCount, getSendCount, sortAttemptsByTimestampDesc } from "../utils/attempts";
 import { anglePresets, gradePresets } from "../utils/presets";
 
@@ -74,6 +74,23 @@ async function insertSession(session: Session) {
 
 async function insertClimb(climb: Climb) {
   await db.climbs.add(climb);
+}
+
+async function startStrengthSetInDb(sessionId: string, name: string, startedAt: string, endedAt: string): Promise<StrengthSet> {
+  const strengthSet: StrengthSet = {
+    id: `${name.toLowerCase().replace(/\s+/g, "-")}-${startedAt}`,
+    sessionId,
+    name,
+    startedAt,
+    endedAt,
+    weight: null,
+    reps: null,
+    workDurationSeconds: null,
+    memo: null,
+    createdAt: startedAt,
+  };
+  await db.strengthSets.add(strengthSet);
+  return strengthSet;
 }
 
 describe("repository", () => {
@@ -800,6 +817,84 @@ describe("repository", () => {
     await finishStrengthSet(activeSet.id);
   });
 
+  it("prevents updateAttempt from activating an attempt while a strength set is active", async () => {
+    setNow("2026-08-17T09:00:00.000Z");
+    const session = await createSession();
+    const climb = await createClimb(session.id, "2Q", "A");
+    const attempt = await createAttempt(session.id, climb.id, "fail");
+    await startStrengthSet(session.id, { name: "Weighted Pull-up" });
+
+    await expect(
+      updateAttempt(attempt.id, {
+        climbId: climb.id,
+        startedAt: "2026-08-17T09:00:00.000Z",
+        endedAt: null,
+        result: null,
+      }),
+    ).rejects.toThrow("Finish or cancel the active strength set first.");
+  });
+
+  it("prevents updateStrengthSet from activating a strength set while an attempt is active", async () => {
+    setNow("2026-08-17T09:00:00.000Z");
+    const session = await createSession();
+    const climb = await createClimb(session.id, "2Q", "A");
+    await startAttempt(session.id, climb.id);
+    const strengthSet = await startStrengthSetInDb(session.id, "Weighted Pull-up", "2026-08-17T09:00:00.000Z", "2026-08-17T09:01:00.000Z");
+
+    await expect(updateStrengthSet(strengthSet.id, { endedAt: null })).rejects.toThrow("Finish or cancel the active attempt first.");
+  });
+
+  it("prevents updateAttempt from creating a second active attempt", async () => {
+    setNow("2026-08-17T09:00:00.000Z");
+    const session = await createSession();
+    const climb = await createClimb(session.id, "2Q", "A");
+    await startAttempt(session.id, climb.id);
+    const attempt = await createAttempt(session.id, climb.id, "fail");
+
+    await expect(
+      updateAttempt(attempt.id, {
+        climbId: climb.id,
+        startedAt: "2026-08-17T09:00:00.000Z",
+        endedAt: null,
+        result: null,
+      }),
+    ).rejects.toThrow("Finish or cancel the active attempt first.");
+  });
+
+  it("prevents updateStrengthSet from creating a second active strength set", async () => {
+    setNow("2026-08-17T09:00:00.000Z");
+    const session = await createSession();
+    await startStrengthSet(session.id, { name: "Front Lever" });
+    const strengthSet = await startStrengthSetInDb(session.id, "Weighted Pull-up", "2026-08-17T09:00:00.000Z", "2026-08-17T09:01:00.000Z");
+
+    await expect(updateStrengthSet(strengthSet.id, { endedAt: null })).rejects.toThrow("Finish or cancel the active strength set first.");
+  });
+
+  it("allows updateAttempt and updateStrengthSet to update their own active records", async () => {
+    setNow("2026-08-17T09:00:00.000Z");
+    const session = await createSession();
+    const climb = await createClimb(session.id, "2Q", "A");
+    const activeAttempt = await startAttempt(session.id, climb.id);
+
+    await expect(
+      updateAttempt(activeAttempt.id, {
+        climbId: climb.id,
+        startedAt: activeAttempt.startedAt,
+        endedAt: null,
+        result: null,
+        note: "Still active",
+      }),
+    ).resolves.toMatchObject({ id: activeAttempt.id, endedAt: null, note: "Still active" });
+    await cancelAttempt(activeAttempt.id);
+
+    const activeStrengthSet = await startStrengthSet(session.id, { name: "Front Lever" });
+    await expect(updateStrengthSet(activeStrengthSet.id, { weight: 5, endedAt: null })).resolves.toMatchObject({
+      id: activeStrengthSet.id,
+      endedAt: null,
+      weight: 5,
+    });
+  });
+
   it("deletes only the target attempt and derived values recalculate from remaining raw attempts", async () => {
     setNow("2026-08-17T09:00:00.000Z");
     const session = await createSession();
@@ -915,6 +1010,10 @@ describe("repository", () => {
     expect(snapshot?.climbs.map((item) => item.id)).toEqual([firstClimb.id, secondClimb.id]);
     expect(snapshot?.attempts.map((item) => item.id)).toEqual([attempt.id]);
     expect(snapshot?.ui.currentClimbId).toBe(firstClimb.id);
+    expect(snapshot?.ui.currentActivityType).toBe("climb");
+
+    const trainingSnapshot = await loadActiveSessionSnapshot(session.id, firstClimb.id, "gym", null, "training");
+    expect(trainingSnapshot?.ui.currentActivityType).toBe("training");
   });
 
   it("restores the current active session snapshot and falls back to the latest climb", async () => {

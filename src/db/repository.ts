@@ -545,9 +545,10 @@ export async function loadCurrentActiveSessionSnapshot(
   currentClimbId: string | null = null,
   currentWallType: "gym" | "board" = "gym",
   currentBoardId: string | null = null,
+  currentActivityType: "climb" | "training" = "climb",
 ): Promise<ActiveSessionSnapshot | null> {
   const session = await getActiveSession();
-  return session ? loadActiveSessionSnapshot(session.id, currentClimbId, currentWallType, currentBoardId) : null;
+  return session ? loadActiveSessionSnapshot(session.id, currentClimbId, currentWallType, currentBoardId, currentActivityType) : null;
 }
 
 export async function loadActiveSessionSnapshot(
@@ -555,6 +556,7 @@ export async function loadActiveSessionSnapshot(
   currentClimbId: string | null = null,
   currentWallType: "gym" | "board" = "gym",
   currentBoardId: string | null = null,
+  currentActivityType: "climb" | "training" = "climb",
 ): Promise<ActiveSessionSnapshot | null> {
   const session = await getSession(sessionId);
   if (!session) {
@@ -593,7 +595,7 @@ export async function loadActiveSessionSnapshot(
     ui: {
       currentClimbId: resolvedCurrentClimbId,
       ...resolvedCurrentWall,
-      currentActivityType: "climb",
+      currentActivityType,
     },
   };
 }
@@ -1044,16 +1046,29 @@ export async function updateStrengthSet(strengthSetId: string, update: StrengthS
     updatedAt,
   };
 
-  await db.strengthSets.update(strengthSetId, {
-    name: updatedStrengthSet.name,
-    startedAt: updatedStrengthSet.startedAt,
-    endedAt: updatedStrengthSet.endedAt,
-    weight: updatedStrengthSet.weight,
-    reps: updatedStrengthSet.reps,
-    workDurationSeconds: updatedStrengthSet.workDurationSeconds,
-    effort: updatedStrengthSet.effort,
-    memo: updatedStrengthSet.memo,
-    updatedAt,
+  await db.transaction("rw", db.attempts, db.strengthSets, async () => {
+    if (updatedStrengthSet.endedAt === null) {
+      const activeAttempt = await getActiveAttempt(updatedStrengthSet.sessionId);
+      if (activeAttempt) {
+        throw new Error("Finish or cancel the active attempt first.");
+      }
+      const activeStrengthSet = await getActiveStrengthSet(updatedStrengthSet.sessionId);
+      if (activeStrengthSet && activeStrengthSet.id !== strengthSetId) {
+        throw new Error("Finish or cancel the active strength set first.");
+      }
+    }
+
+    await db.strengthSets.update(strengthSetId, {
+      name: updatedStrengthSet.name,
+      startedAt: updatedStrengthSet.startedAt,
+      endedAt: updatedStrengthSet.endedAt,
+      weight: updatedStrengthSet.weight,
+      reps: updatedStrengthSet.reps,
+      workDurationSeconds: updatedStrengthSet.workDurationSeconds,
+      effort: updatedStrengthSet.effort,
+      memo: updatedStrengthSet.memo,
+      updatedAt,
+    });
   });
   return updatedStrengthSet;
 }
@@ -1174,13 +1189,6 @@ export async function updateAttempt(attemptId: string, update: AttemptUpdate): P
     throw new Error("Attempt time must stay within the session range.");
   }
 
-  if (endedAt === null) {
-    const activeAttempt = await getActiveAttempt(attempt.sessionId);
-    if (activeAttempt && activeAttempt.id !== attemptId) {
-      throw new Error("Finish or cancel the active attempt first.");
-    }
-  }
-
   const updatedAt = nowIso();
   const updatedAttempt: Attempt = {
     ...attempt,
@@ -1194,15 +1202,28 @@ export async function updateAttempt(attemptId: string, update: AttemptUpdate): P
     updatedAt,
   };
 
-  await db.attempts.update(attemptId, {
-    climbId: updatedAttempt.climbId,
-    result: updatedAttempt.result,
-    startedAt: updatedAttempt.startedAt,
-    endedAt: updatedAttempt.endedAt,
-    timestamp: updatedAttempt.timestamp,
-    effort: updatedAttempt.effort,
-    note: updatedAttempt.note,
-    updatedAt,
+  await db.transaction("rw", db.attempts, db.strengthSets, async () => {
+    if (updatedAttempt.endedAt === null) {
+      const activeAttempt = await getActiveAttempt(updatedAttempt.sessionId);
+      if (activeAttempt && activeAttempt.id !== attemptId) {
+        throw new Error("Finish or cancel the active attempt first.");
+      }
+      const activeStrengthSet = await getActiveStrengthSet(updatedAttempt.sessionId);
+      if (activeStrengthSet) {
+        throw new Error("Finish or cancel the active strength set first.");
+      }
+    }
+
+    await db.attempts.update(attemptId, {
+      climbId: updatedAttempt.climbId,
+      result: updatedAttempt.result,
+      startedAt: updatedAttempt.startedAt,
+      endedAt: updatedAttempt.endedAt,
+      timestamp: updatedAttempt.timestamp,
+      effort: updatedAttempt.effort,
+      note: updatedAttempt.note,
+      updatedAt,
+    });
   });
   return updatedAttempt;
 }

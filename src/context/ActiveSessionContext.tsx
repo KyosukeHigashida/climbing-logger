@@ -44,10 +44,11 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
       snapshot?.ui.currentClimbId ?? null,
       snapshot?.ui.currentWallType ?? "gym",
       snapshot?.ui.currentBoardId ?? null,
+      snapshot?.ui.currentActivityType ?? "climb",
     );
     setSnapshot(nextSnapshot);
     return nextSnapshot;
-  }, [snapshot?.ui.currentBoardId, snapshot?.ui.currentClimbId, snapshot?.ui.currentWallType]);
+  }, [snapshot?.ui.currentActivityType, snapshot?.ui.currentBoardId, snapshot?.ui.currentClimbId, snapshot?.ui.currentWallType]);
 
   const refreshSession = useCallback(
     async (sessionId: string, currentClimbId: string | null = null, wallSelection: SavedWallSelection | null = null) => {
@@ -56,11 +57,12 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
         currentClimbId,
         wallSelection?.wallType ?? snapshot?.ui.currentWallType ?? "gym",
         wallSelection?.wallBoardId ?? snapshot?.ui.currentBoardId ?? null,
+        snapshot?.ui.currentActivityType ?? "climb",
       );
       setSnapshot(nextSnapshot);
       return nextSnapshot;
     },
-    [snapshot?.ui.currentBoardId, snapshot?.ui.currentWallType],
+    [snapshot?.ui.currentActivityType, snapshot?.ui.currentBoardId, snapshot?.ui.currentWallType],
   );
 
   const clearSnapshot = useCallback(() => {
