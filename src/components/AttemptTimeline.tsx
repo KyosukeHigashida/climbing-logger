@@ -56,6 +56,7 @@ export function AttemptTimeline({ attempts, strengthSets = [], climbs, gyms = []
 
                 if (item.type === "strength") {
                   const set = item.set;
+                  const strengthMeta = formatStrengthTimelineMeta(set);
                   return (
                     <li key={set.id} className="timeline-item">
                       <div className="timeline-time">{formatTime(item.endedAt)}</div>
@@ -65,7 +66,10 @@ export function AttemptTimeline({ attempts, strengthSets = [], climbs, gyms = []
                         <div className="timeline-rest">
                           {formatTime(item.startedAt)}-{formatTime(item.endedAt)}
                         </div>
-                        <div className="timeline-effort">{formatStrengthTimelineMeta(set)}</div>
+                        {strengthMeta && <div className="timeline-effort">{strengthMeta}</div>}
+                        {set.effort !== null && set.effort !== undefined && (
+                          <div className="timeline-effort">Effort: {effortLabels[set.effort]}</div>
+                        )}
                         {set.memo && <div className="timeline-note">{set.memo}</div>}
                       </div>
                     </li>
@@ -136,9 +140,6 @@ function formatStrengthTimelineMeta(set: StrengthSet): string {
   }
   if (set.workDurationSeconds !== null && set.workDurationSeconds !== undefined) {
     parts.push(`${set.workDurationSeconds} sec`);
-  }
-  if (set.effort !== null && set.effort !== undefined) {
-    parts.push(`Effort ${set.effort}`);
   }
   return parts.join(", ");
 }
