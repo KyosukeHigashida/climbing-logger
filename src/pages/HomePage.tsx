@@ -199,6 +199,15 @@ export function HomePage() {
         </button>
       </section>
 
+      <section className="section home-history-section" aria-label="Statistics">
+        <div>
+          <h2>Stats</h2>
+        </div>
+        <button className="secondary full" onClick={() => navigate("/stats")}>
+          Open Stats
+        </button>
+      </section>
+
       {isQaOpen && (
         <section className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Q&A">
           <div className="modal-panel">

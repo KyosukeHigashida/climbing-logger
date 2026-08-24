@@ -140,11 +140,48 @@ Historical climbs remain different from draft inputs. Old climbs may still displ
 
 Continue Session should feel instant, but it must not preserve stale master choices indefinitely. The desired model is warm navigation from the in-memory active session state, plus a background reconciliation with IndexedDB so master edits made from Home or master pages are reflected as soon as possible.
 
+## Strength Training Integration
+
+Strength training was added to the same session flow because gym sessions often mix climbing attempts and supplemental exercises. The goal is not to create a separate workout app, but to let hangboard, pull, core, or similar work sit inside the same training day.
+
+The session has a single current activity mode. Switching between Climb and Training should feel like changing the current recording surface, not starting a new session. Recent Activity acts as a quick way to return to the relevant current surface.
+
+The core invariant became broader: one session can have at most one active physical action at a time. An active climbing attempt and an active strength set should not overlap. This keeps action/rest interpretation meaningful across mixed climbing and training sessions.
+
+Training effort uses the same style of slider as climb attempt effort because the app should not teach two different rating controls for the same subjective concept. Labels are preferred over raw numeric display in user-facing activity and timeline views.
+
+Training set details were tuned for compact mobile review. Weight, reps, and work duration are displayed as plain values such as "10 kg, 5 reps, 10 sec" rather than symbolic formulas, because the latter was harder to scan beside climbing activity.
+
+## Current Climb Editing Semantics
+
+Current Climb editing was refined around a real correction scenario: after pressing START, the user may notice that the grade, wall angle, name, or wall context was entered incorrectly. During an active attempt, those edits should correct the current climb record, not prepare a future climb.
+
+The resulting rule is state-based. Before any attempt exists, identity edits change the current climb directly. During an active attempt, identity edits also correct the current climb directly. Only after a completed attempt exists and no attempt is active do identity edits become a draft for the next climb.
+
+This preserves historical integrity without making live correction awkward. Completed climbs are not silently rewritten after the fact, but an in-progress attempt can still be fixed before it is finished.
+
+Memo remains separate from identity. Climb memo is allowed to change on the current climb even after completed attempts, because it is usually a note about the problem rather than proof that the user started a different climb.
+
+## Review And History
+
+The app gained a Session Review / Summary layer to capture end-of-session reflection such as overall RPE and performance. These values are meant to describe the session as a whole, not individual attempts or sets.
+
+Review defaults should carry forward where that reduces repetitive input. The purpose is to make post-session reflection quick enough that it can be done at the gym, while still allowing each session to be adjusted.
+
+A History screen was added because the user needs a way to look back across training days, not only reopen individual recent sessions. The first version focuses on day, week, and month review rather than statistics-heavy analysis.
+
+The calendar is intentionally a data-view style grid. Rounded day chips looked too much like individual buttons and took visual attention away from the activity pattern. A square grid with thin lines makes the monthly distribution easier to scan.
+
+History is documented in Q&A rather than explained below the Home button. Home should stay operational and compact; explanatory text belongs in the help surface.
+
+## Icon And Install Feel
+
+The PWA icon was replaced with a custom visual mark so the installed app feels more intentional on the iPhone home screen. The icon change is presentation only and does not affect storage, routing, service worker behavior, or the local-first data model.
+
 ## Current Out Of Scope
 
 - Authentication
 - Supabase or cloud sync
-- Strength training
 - Statistics and charts
 - AI analysis
 - JSON merge import
