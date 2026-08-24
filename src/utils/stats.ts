@@ -8,7 +8,8 @@ export type EffortFilterLabel = "all" | "easy" | "moderate" | "hard" | "extreme"
 export type EffortFilterOperator = "=" | ">=" | "<=";
 
 export type StatsEffortFilter = {
-  label: EffortFilterLabel;
+  label?: EffortFilterLabel;
+  value?: EffortRating | "all";
   operator: EffortFilterOperator;
 };
 
@@ -34,6 +35,20 @@ export type ActivityStats = {
   totalAttempts: number;
   totalStrengthSets: number;
   hasRecordsInRange: boolean;
+};
+
+export type StatsOverlayMetricKey = "sessionRpeAverage" | "performanceAverage";
+
+export type StatsOverlayPoint = {
+  key: string;
+  label: string;
+  value: number;
+  x: number;
+  y: number;
+};
+
+export type StatsOverlaySegment = {
+  points: StatsOverlayPoint[];
 };
 
 export const effortFilterThresholds: Record<Exclude<EffortFilterLabel, "all">, EffortRating> = {
@@ -127,14 +142,14 @@ export function getBucketUnit(period: StatsPeriod): StatsBucketUnit {
 }
 
 export function matchesEffortFilter(effort: number | null | undefined, filter: StatsEffortFilter): boolean {
-  if (filter.label === "all") {
+  const threshold = getEffortFilterThreshold(filter);
+  if (threshold === null) {
     return true;
   }
   if (effort === null || effort === undefined) {
     return false;
   }
 
-  const threshold = effortFilterThresholds[filter.label];
   if (filter.operator === "=") {
     return effort === threshold;
   }
@@ -142,6 +157,58 @@ export function matchesEffortFilter(effort: number | null | undefined, filter: S
     return effort >= threshold;
   }
   return effort <= threshold;
+}
+
+export function getBucketCenterX(index: number, marginLeft: number, barSlot: number): number {
+  return marginLeft + index * barSlot + barSlot / 2;
+}
+
+export function buildOverlaySegments(
+  buckets: StatsBucket[],
+  key: StatsOverlayMetricKey,
+  maxValue: number,
+  layout: { marginLeft: number; marginTop: number; plotHeight: number; barSlot: number },
+): StatsOverlaySegment[] {
+  const segments: StatsOverlaySegment[] = [];
+  let currentPoints: StatsOverlayPoint[] = [];
+
+  buckets.forEach((bucket, index) => {
+    const value = bucket[key];
+    if (value === null) {
+      if (currentPoints.length > 0) {
+        segments.push({ points: currentPoints });
+        currentPoints = [];
+      }
+      return;
+    }
+
+    currentPoints.push({
+      key: bucket.key,
+      label: bucket.label,
+      value,
+      x: getBucketCenterX(index, layout.marginLeft, layout.barSlot),
+      y: layout.marginTop + layout.plotHeight - (value / maxValue) * layout.plotHeight,
+    });
+  });
+
+  if (currentPoints.length > 0) {
+    segments.push({ points: currentPoints });
+  }
+
+  return segments;
+}
+
+function getEffortFilterThreshold(filter: StatsEffortFilter): EffortRating | null {
+  if (filter.value === "all" || filter.label === "all") {
+    return null;
+  }
+  if (filter.value !== undefined) {
+    return filter.value;
+  }
+  if (filter.label !== undefined) {
+    return effortFilterThresholds[filter.label];
+  }
+  return null;
 }
 
 export function getStatsRange(

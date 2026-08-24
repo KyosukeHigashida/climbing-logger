@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Attempt, Session, StrengthSet } from "../types/domain";
 import {
+  buildOverlaySegments,
   buildActivityStats,
+  getBucketCenterX,
   getBucketUnit,
   matchesEffortFilter,
+  type StatsBucket,
   type StatsActivityType,
   type StatsEffortFilter,
   type StatsPeriod,
@@ -97,6 +100,51 @@ describe("stats aggregation", () => {
     expect(stats.buckets.at(0)?.key).toBe("2026-01");
     expect(stats.buckets.some((bucket) => bucket.key === "2026-08" && bucket.strengthSetCount === 1)).toBe(true);
   });
+
+  it("places overlay points at bucket centers, matching bar coordinates", () => {
+    const buckets = [
+      statsBucket("b1", 2),
+      statsBucket("b2", 6),
+      statsBucket("b3", 10),
+    ];
+    const barSlot = 40;
+    const segments = buildOverlaySegments(buckets, "sessionRpeAverage", 10, {
+      marginLeft: 20,
+      marginTop: 10,
+      plotHeight: 100,
+      barSlot,
+    });
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0].points.map((point) => point.x)).toEqual([
+      getBucketCenterX(0, 20, barSlot),
+      getBucketCenterX(1, 20, barSlot),
+      getBucketCenterX(2, 20, barSlot),
+    ]);
+  });
+
+  it("breaks overlay line segments at buckets without review values", () => {
+    const segments = buildOverlaySegments(
+      [
+        statsBucket("recorded-a", 2),
+        statsBucket("missing-a", null),
+        statsBucket("missing-b", null),
+        statsBucket("recorded-b", 5),
+        statsBucket("recorded-c", 6),
+        statsBucket("missing-c", null),
+        statsBucket("recorded-d", 7),
+      ],
+      "sessionRpeAverage",
+      10,
+      { marginLeft: 10, marginTop: 0, plotHeight: 100, barSlot: 20 },
+    );
+
+    expect(segments.map((segment) => segment.points.map((point) => point.key))).toEqual([
+      ["recorded-a"],
+      ["recorded-b", "recorded-c"],
+      ["recorded-d"],
+    ]);
+  });
 });
 
 function buildStats({
@@ -156,5 +204,18 @@ function strengthSet(id: string, sessionId: string, endedAt: string, effort?: 1 
     endedAt,
     effort,
     createdAt: endedAt,
+  };
+}
+
+function statsBucket(key: string, sessionRpeAverage: number | null): StatsBucket {
+  return {
+    key,
+    label: key,
+    start: new Date("2026-08-24T00:00:00.000Z"),
+    end: new Date("2026-08-25T00:00:00.000Z"),
+    attemptCount: 0,
+    strengthSetCount: 0,
+    sessionRpeAverage,
+    performanceAverage: null,
   };
 }
