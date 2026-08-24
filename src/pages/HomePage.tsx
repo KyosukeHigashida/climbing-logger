@@ -190,6 +190,15 @@ export function HomePage() {
         </section>
       )}
 
+      <section className="section home-history-section" aria-label="History">
+        <div>
+          <h2>History</h2>
+        </div>
+        <button className="secondary full" onClick={() => navigate("/history")}>
+          Open History
+        </button>
+      </section>
+
       {isQaOpen && (
         <section className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Q&A">
           <div className="modal-panel">

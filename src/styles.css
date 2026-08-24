@@ -793,6 +793,11 @@ h2 {
   margin-top: 10px;
 }
 
+.home-history-section {
+  display: grid;
+  gap: 12px;
+}
+
 .session-header-actions {
   display: grid;
   justify-items: end;
@@ -1571,6 +1576,186 @@ h2 {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.history-section,
+.history-summary-section,
+.history-day-section {
+  display: grid;
+  gap: 12px;
+}
+
+.history-mode-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.history-mode-switch button {
+  min-height: 42px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #dbe3d6;
+  font-size: 0.86rem;
+  font-weight: 900;
+}
+
+.history-mode-switch button.selected {
+  background: #d7f45f;
+  color: #15180e;
+}
+
+.calendar-toolbar {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.calendar-toolbar strong {
+  min-width: 0;
+  color: #f4f7f1;
+  font-size: 1rem;
+  font-weight: 950;
+}
+
+.calendar-nav-button {
+  min-height: 40px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.08);
+  color: #d7f45f;
+  font-size: 1.35rem;
+  font-weight: 950;
+}
+
+.history-today-button {
+  min-height: 38px;
+  font-size: 0.86rem;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  min-width: 0;
+}
+
+.calendar-weekday {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  color: #aab5ab;
+  font-size: clamp(0.58rem, 2.8vw, 0.72rem);
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.calendar-day {
+  display: grid;
+  place-items: center;
+  gap: 3px;
+  min-width: 0;
+  min-height: 42px;
+  padding: 4px 0;
+  border: 1px solid rgba(212, 221, 209, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f4f7f1;
+  font-size: 0.86rem;
+  font-weight: 850;
+}
+
+.calendar-day.outside-month {
+  color: rgba(170, 181, 171, 0.46);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.calendar-day.selected {
+  border-color: rgba(215, 244, 95, 0.72);
+  background: rgba(215, 244, 95, 0.14);
+  color: #f4f7f1;
+}
+
+.activity-dots {
+  display: flex;
+  justify-content: center;
+  gap: 3px;
+  min-height: 6px;
+}
+
+.activity-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+}
+
+.activity-dot.climbing {
+  background: #d7f45f;
+}
+
+.activity-dot.training {
+  background: #68e0a2;
+}
+
+.history-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.history-metric {
+  min-width: 0;
+  border: 1px solid rgba(212, 221, 209, 0.1);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.history-metric span {
+  display: block;
+  color: #aab5ab;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.history-metric strong {
+  display: block;
+  margin-top: 4px;
+  color: #f4f7f1;
+  font-size: 1.25rem;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.history-session-list {
+  display: grid;
+  gap: 10px;
+}
+
+.history-session-card {
+  border: 1px solid rgba(212, 221, 209, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.history-session-open {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 74px;
+  padding: 10px 12px;
+  background: transparent;
+  color: #f4f7f1;
+  text-align: left;
+}
+
+.history-session-open small {
+  display: block;
+  margin-top: 3px;
+  color: #aab5ab;
+  font-size: 0.78rem;
 }
 
 .timeline-item {
