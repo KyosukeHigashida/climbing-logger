@@ -133,7 +133,7 @@ export function StatsPage() {
                 { value: 7, label: "Extreme" },
               ]}
               ariaLabel="Stats effort filter"
-              selectionMode={effortOperator === "=" ? "point" : effortOperator === ">=" ? "left" : "right"}
+              selectionMode={effortOperator === "=" ? "point" : effortOperator === ">=" ? "right" : "left"}
               onChange={(value) => {
                 setEffortValue(value as EffortRating);
                 setIncludeAllEfforts(false);
