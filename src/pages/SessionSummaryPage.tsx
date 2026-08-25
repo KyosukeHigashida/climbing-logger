@@ -3,9 +3,11 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { AttemptEditor } from "../components/AttemptEditor";
 import { AttemptTimeline } from "../components/AttemptTimeline";
 import { ScaleInput } from "../components/ScaleInput";
+import { SessionGradeTimeline } from "../components/SessionGradeTimeline";
 import { useActiveSession } from "../context/ActiveSessionContext";
 import {
   deleteAttempt,
+  getAllGrades,
   getAllGyms,
   getSession,
   getSessionAttempts,
@@ -15,7 +17,7 @@ import {
   updateAttempt,
   updateSessionReview,
 } from "../db/repository";
-import type { Attempt, Climb, Gym, Session, StrengthSet } from "../types/domain";
+import type { Attempt, Climb, Grade, Gym, Session, StrengthSet } from "../types/domain";
 import { getFailCount, getSendCount } from "../utils/attempts";
 import { formatSessionDuration } from "../utils/time";
 import { useEffect, useState } from "react";
@@ -49,6 +51,7 @@ export function SessionSummaryPage() {
     [sessionId],
   );
   const gyms = useLiveQuery<Gym[]>(() => getAllGyms(), []);
+  const grades = useLiveQuery<Grade[]>(() => getAllGrades(), []);
 
   useEffect(() => {
     if (!session) {
@@ -65,7 +68,7 @@ export function SessionSummaryPage() {
     setReviewMessage(null);
   }, [sessionId]);
 
-  if (session === undefined || !climbs || !attempts || !strengthSets || !gyms) {
+  if (session === undefined || !climbs || !attempts || !strengthSets || !gyms || !grades) {
     return <main className="app-shell loading">Loading summary...</main>;
   }
 
@@ -248,6 +251,8 @@ export function SessionSummaryPage() {
       <button className="secondary full reopen-session-button" onClick={handleReopenSession}>
         REOPEN SESSION
       </button>
+
+      <SessionGradeTimeline session={session} climbs={climbs} attempts={attempts} grades={grades} />
 
       {editingAttempt && (
         <AttemptEditor

@@ -1945,6 +1945,64 @@ h2 {
   font-weight: 950;
 }
 
+.grade-timeline-section {
+  display: grid;
+  gap: 10px;
+}
+
+.grade-timeline-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid rgba(212, 221, 209, 0.14);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.grade-timeline-chart {
+  display: block;
+  width: 100%;
+  min-height: 230px;
+}
+
+.grade-timeline-grid-line {
+  stroke: rgba(212, 221, 209, 0.1);
+  stroke-width: 1;
+}
+
+.grade-timeline-attempt {
+  cursor: pointer;
+}
+
+.grade-timeline-bar {
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+
+.grade-timeline-bar.fail {
+  stroke: #f2b36d;
+}
+
+.grade-timeline-bar.send {
+  stroke: #68e0a2;
+}
+
+.grade-timeline-point {
+  fill: #f4f7f1;
+  stroke: #0f1411;
+  stroke-width: 1.5;
+}
+
+.grade-timeline-point.selected {
+  fill: #d7f45f;
+  stroke: #0f1411;
+  stroke-width: 2;
+}
+
+.grade-timeline-details {
+  margin-top: 0;
+}
+
 .stats-controls {
   display: grid;
   gap: 12px;

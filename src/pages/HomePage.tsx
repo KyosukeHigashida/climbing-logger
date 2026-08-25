@@ -204,7 +204,7 @@ export function HomePage() {
           <h2>Stats</h2>
         </div>
         <button className="secondary full" onClick={() => navigate("/stats")}>
-          Open Stats
+          Open Statistics
         </button>
       </section>
 
