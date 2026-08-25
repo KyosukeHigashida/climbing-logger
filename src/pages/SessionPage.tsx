@@ -6,6 +6,7 @@ import { ClimbList } from "../components/ClimbList";
 import { EffortInput } from "../components/EffortInput";
 import { IntervalTimer } from "../components/IntervalTimer";
 import { SessionTimer } from "../components/SessionTimer";
+import { StrengthSetEditor } from "../components/StrengthSetEditor";
 import { useActiveSession } from "../context/ActiveSessionContext";
 import {
   cancelAttempt,
@@ -13,6 +14,7 @@ import {
   createClimb,
   createWallAngle,
   deleteAttempt,
+  deleteStrengthSet,
   endSession,
   finishAttempt,
   cancelStrengthSet,
@@ -92,6 +94,7 @@ export function SessionPage() {
   const [restoredUiSessionId, setRestoredUiSessionId] = useState<string | null>(null);
   const isColdLoading = !snapshot && (isHydrating || isLoadingSnapshot);
   const [editingAttemptId, setEditingAttemptId] = useState<string | null>(null);
+  const [editingStrengthSetId, setEditingStrengthSetId] = useState<string | null>(null);
   const [pendingEffortAttemptId, setPendingEffortAttemptId] = useState<string | null>(null);
   const [pendingStrengthSetId, setPendingStrengthSetId] = useState<string | null>(null);
   const [pendingEffort, setPendingEffort] = useState<AttemptEffort>(4);
@@ -385,6 +388,7 @@ export function SessionPage() {
   const shouldShowTrainingCard = Boolean(isTrainingDraftOpen || activeStrengthSet || pendingStrengthSet || selectedStrengthSetId);
   const trainingDraftError = getTrainingDraftError(trainingDraft);
   const editingAttempt = attempts.find((attempt) => attempt.id === editingAttemptId) ?? null;
+  const editingStrengthSet = strengthSets.find((set) => set.id === editingStrengthSetId) ?? null;
   const restStartedAt = getLastCompletedPhysicalActivityEnd(attempts, strengthSets) ?? activeSession.startedAt;
   const initialWallAnglePreset = getReusableWallAnglePreset(climbs, activeSession.initialGymId ?? null, wallAngles);
   const strengthNameSuggestions = getStrengthNameSuggestions(strengthSets);
@@ -685,6 +689,23 @@ export function SessionPage() {
     upsertAttempt(attempt);
   }
 
+  async function handleDeleteStrengthSet(strengthSetId: string) {
+    await deleteStrengthSet(strengthSetId);
+    removeStrengthSet(strengthSetId);
+    if (selectedStrengthSetId === strengthSetId) {
+      setSelectedStrengthSetId(null);
+      setIsTrainingDraftOpen(false);
+    }
+  }
+
+  async function handleSaveStrengthSet(strengthSetId: string, update: Parameters<typeof updateStrengthSet>[1]) {
+    const strengthSet = await updateStrengthSet(strengthSetId, update);
+    upsertStrengthSet(strengthSet);
+    if (selectedStrengthSetId === strengthSetId) {
+      setTrainingDraft(strengthSetToDraft(strengthSet));
+    }
+  }
+
   async function handleEndSession() {
     if (!sessionId || !window.confirm("End this session?")) {
       return;
@@ -923,7 +944,26 @@ export function SessionPage() {
         />
       )}
 
-      <AttemptTimeline attempts={attempts} strengthSets={strengthSets} climbs={climbs} gyms={gyms} onEdit={(attempt) => setEditingAttemptId(attempt.id)} />
+      {editingStrengthSet && (
+        <StrengthSetEditor
+          key={editingStrengthSet.id}
+          strengthSet={editingStrengthSet}
+          sessionStartedAt={activeSession.startedAt}
+          sessionEndedAt={activeSession.endedAt}
+          onCancel={() => setEditingStrengthSetId(null)}
+          onDelete={handleDeleteStrengthSet}
+          onSave={handleSaveStrengthSet}
+        />
+      )}
+
+      <AttemptTimeline
+        attempts={attempts}
+        strengthSets={strengthSets}
+        climbs={climbs}
+        gyms={gyms}
+        onEdit={(attempt) => setEditingAttemptId(attempt.id)}
+        onEditStrength={(strengthSet) => setEditingStrengthSetId(strengthSet.id)}
+      />
 
       <button className="danger full end-button" onClick={handleEndSession}>
         END SESSION

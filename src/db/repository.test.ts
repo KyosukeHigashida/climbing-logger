@@ -19,6 +19,7 @@ import {
   deleteGrade,
   deleteGym,
   deleteSession,
+  deleteStrengthSet,
   deleteWallAngle,
   endSession,
   exportAllData,
@@ -802,6 +803,18 @@ describe("repository", () => {
     await cancelStrengthSet(set.id);
 
     expect(await db.strengthSets.get(set.id)).toBeUndefined();
+  });
+
+  it("deletes completed strength sets but rejects active strength set deletion", async () => {
+    const session = await createSession();
+    const activeSet = await startStrengthSet(session.id, { name: "Front Lever" });
+
+    await expect(deleteStrengthSet(activeSet.id)).rejects.toThrow("Cancel active strength sets instead.");
+
+    const finishedSet = await finishStrengthSet(activeSet.id);
+    await deleteStrengthSet(finishedSet.id);
+
+    expect(await db.strengthSets.get(finishedSet.id)).toBeUndefined();
   });
 
   it("prevents simultaneous active attempts and strength sets", async () => {

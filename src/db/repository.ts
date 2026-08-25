@@ -1095,6 +1095,17 @@ export async function cancelStrengthSet(strengthSetId: string): Promise<void> {
   await db.strengthSets.delete(strengthSetId);
 }
 
+export async function deleteStrengthSet(strengthSetId: string): Promise<void> {
+  const strengthSet = await db.strengthSets.get(strengthSetId);
+  if (!strengthSet) {
+    throw new Error("Strength set does not exist.");
+  }
+  if (strengthSet.endedAt === null) {
+    throw new Error("Cancel active strength sets instead.");
+  }
+  await db.strengthSets.delete(strengthSetId);
+}
+
 export async function updateStrengthSetMetadata(
   strengthSetId: string,
   effort: EffortRating | null,

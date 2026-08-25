@@ -12,9 +12,10 @@ type AttemptTimelineProps = {
   climbs: Climb[];
   gyms?: Gym[];
   onEdit?: (attempt: Attempt) => void;
+  onEditStrength?: (strengthSet: StrengthSet) => void;
 };
 
-export function AttemptTimeline({ attempts, strengthSets = [], climbs, gyms = [], onEdit }: AttemptTimelineProps) {
+export function AttemptTimeline({ attempts, strengthSets = [], climbs, gyms = [], onEdit, onEditStrength }: AttemptTimelineProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   const climbById = new Map(climbs.map((climb) => [climb.id, climb]));
   const gymById = new Map(gyms.map((gym) => [gym.id, gym]));
@@ -71,6 +72,11 @@ export function AttemptTimeline({ attempts, strengthSets = [], climbs, gyms = []
                           <div className="timeline-effort">Effort: {effortLabels[set.effort]}</div>
                         )}
                         {set.memo && <div className="timeline-note">{set.memo}</div>}
+                        {onEditStrength && (
+                          <button className="edit-attempt-button" onClick={() => onEditStrength(set)}>
+                            Edit set
+                          </button>
+                        )}
                       </div>
                     </li>
                   );
