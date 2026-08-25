@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Attempt, Climb, Grade, Session } from "../types/domain";
-import { buildSessionGradeTimeline } from "./sessionGradeTimeline";
+import { buildSessionGradeTimeline, getGradeLevelRatio } from "./sessionGradeTimeline";
 
 describe("session grade timeline", () => {
   it("calculates attempt elapsed time from session start using proportional raw milliseconds", () => {
@@ -25,8 +25,34 @@ describe("session grade timeline", () => {
       grades(),
     );
 
-    expect(timeline.grades.map((grade) => grade.label)).toEqual(["4Q", "2Q"]);
+    expect(timeline.grades.map((grade) => grade.label)).toEqual(["4Q", "3Q", "2Q"]);
     expect(timeline.attempts.map((item) => item.gradeOrder)).toEqual([0, 2]);
+  });
+
+  it("keeps the full gym grade scale on the axis even when grades are unused", () => {
+    const timeline = buildSessionGradeTimeline(session(), [climb("hard", "g3")], [attempt("a1", "hard", "2026-08-25T10:02:00.000Z")], grades());
+
+    expect(timeline.grades.map((grade) => grade.id)).toEqual(["g1", "g2", "g3"]);
+  });
+
+  it("keeps the same gym grade level stable across different sessions", () => {
+    const first = buildSessionGradeTimeline(session(), [climb("c1", "g2")], [attempt("a1", "c1", "2026-08-25T10:01:00.000Z")], grades());
+    const second = buildSessionGradeTimeline(
+      { ...session(), id: "another-session", startedAt: "2026-08-26T10:00:00.000Z", endedAt: "2026-08-26T12:00:00.000Z" },
+      [climb("c2", "g2")],
+      [attempt("a2", "c2", "2026-08-26T10:30:00.000Z")],
+      grades(),
+    );
+
+    const firstIndex = first.grades.findIndex((grade) => grade.id === "g2");
+    const secondIndex = second.grades.findIndex((grade) => grade.id === "g2");
+
+    expect(first.grades.map((grade) => grade.id)).toEqual(second.grades.map((grade) => grade.id));
+    expect(getGradeLevelRatio(firstIndex, first.grades.length)).toBe(getGradeLevelRatio(secondIndex, second.grades.length));
+  });
+
+  it("does not give the lowest grade a zero normalized level", () => {
+    expect(getGradeLevelRatio(0, 3)).toBe(1 / 3);
   });
 
   it("excludes training, board climbs, and incomplete attempts", () => {
@@ -56,6 +82,7 @@ describe("session grade timeline", () => {
       gradeId: "archived",
       gradeOrder: 3,
     });
+    expect(timeline.grades.map((grade) => grade.id)).toContain("archived");
   });
 
   it("falls back to a unique gym grade label only when the order is safe to recover", () => {
@@ -82,6 +109,15 @@ describe("session grade timeline", () => {
     );
 
     expect(timeline.attempts).toEqual([]);
+  });
+
+  it("does not mix board grades into the gym wall axis", () => {
+    const timeline = buildSessionGradeTimeline(session(), [climb("gym", "g1")], [attempt("a1", "gym", "2026-08-25T10:01:00.000Z")], [
+      ...grades(),
+      { ...grade("board-grade", "V4", 99), gymId: null, boardId: "board-a" },
+    ]);
+
+    expect(timeline.grades.map((grade) => grade.id)).toEqual(["g1", "g2", "g3"]);
   });
 });
 

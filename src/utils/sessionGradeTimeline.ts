@@ -32,6 +32,7 @@ export function buildSessionGradeTimeline(
   const climbById = new Map(climbs.map((climb) => [climb.id, climb]));
   const gradeById = new Map(grades.map((grade) => [grade.id, grade]));
   const gradeByGymAndLabel = buildGradeByGymAndLabel(grades);
+  const timelineGymIds = getTimelineGymIds(session, climbs);
   const sessionStartedMs = new Date(session.startedAt).getTime();
   const sessionEndedMs = session.endedAt ? new Date(session.endedAt).getTime() : sessionStartedMs;
 
@@ -68,9 +69,20 @@ export function buildSessionGradeTimeline(
       ];
     });
 
-  const usedGradeIds = new Set(timelineAttempts.map((attempt) => attempt.gradeId));
-  const axisGrades = [...grades]
-    .filter((grade) => usedGradeIds.has(grade.id))
+  const axisGradeById = new Map<string, Grade>();
+  for (const grade of grades) {
+    if (isGymGradeForTimeline(grade) && grade.gymId && timelineGymIds.has(grade.gymId)) {
+      axisGradeById.set(grade.id, grade);
+    }
+  }
+  for (const attempt of timelineAttempts) {
+    const historicalGrade = gradeById.get(attempt.gradeId);
+    if (historicalGrade && isGymGradeForTimeline(historicalGrade)) {
+      axisGradeById.set(historicalGrade.id, historicalGrade);
+    }
+  }
+
+  const axisGrades = [...axisGradeById.values()]
     .sort((a, b) => a.order - b.order)
     .map((grade) => ({ id: grade.id, label: grade.label, order: grade.order }));
   const latestAttemptMs = Math.max(0, ...timelineAttempts.map((attempt) => attempt.elapsedMs));
@@ -82,13 +94,21 @@ export function buildSessionGradeTimeline(
   };
 }
 
+export function getGradeLevelRatio(gradeIndex: number, gradeCount: number): number {
+  if (gradeCount <= 0) {
+    return 0;
+  }
+  return (Math.max(0, gradeIndex) + 1) / gradeCount;
+}
+
 function resolveHistoricalGrade(
   climb: Climb,
   gradeById: Map<string, Grade>,
   gradeByGymAndLabel: Map<string, Grade>,
 ): Grade | null {
   if (climb.gradeId) {
-    return gradeById.get(climb.gradeId) ?? null;
+    const grade = gradeById.get(climb.gradeId);
+    return grade && isGymGradeForTimeline(grade) ? grade : null;
   }
 
   const gymId = climb.gymId ?? null;
@@ -103,7 +123,7 @@ function resolveHistoricalGrade(
 function buildGradeByGymAndLabel(grades: Grade[]): Map<string, Grade> {
   const matches = new Map<string, Grade[]>();
   for (const grade of grades) {
-    if (!grade.gymId) {
+    if (!isGymGradeForTimeline(grade) || !grade.gymId) {
       continue;
     }
     const key = getGymGradeLabelKey(grade.gymId, grade.label);
@@ -119,4 +139,23 @@ function buildGradeByGymAndLabel(grades: Grade[]): Map<string, Grade> {
 
 function getGymGradeLabelKey(gymId: string, label: string): string {
   return `${gymId}\u001f${label.trim()}`;
+}
+
+function getTimelineGymIds(session: Session, climbs: Climb[]): Set<string> {
+  const gymIds = new Set<string>();
+  if (session.initialGymId) {
+    gymIds.add(session.initialGymId);
+    return gymIds;
+  }
+
+  for (const climb of climbs) {
+    if (climb.wallType !== "board" && climb.gymId) {
+      gymIds.add(climb.gymId);
+    }
+  }
+  return gymIds;
+}
+
+function isGymGradeForTimeline(grade: Grade): boolean {
+  return !!grade.gymId && !grade.boardId;
 }

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { Attempt, Climb, Grade, Session } from "../types/domain";
 import { effortLabels } from "../utils/effort";
-import { buildSessionGradeTimeline, type SessionGradeTimelineAttempt } from "../utils/sessionGradeTimeline";
+import { buildSessionGradeTimeline, getGradeLevelRatio, type SessionGradeTimelineAttempt } from "../utils/sessionGradeTimeline";
 import { formatIntervalDuration } from "../utils/time";
 
 type SessionGradeTimelineProps = {
@@ -34,10 +34,10 @@ export function SessionGradeTimeline({ session, climbs, attempts, grades }: Sess
   const plotHeight = height - margin.top - margin.bottom;
   const baseline = height - margin.bottom;
   const gradeCount = timeline.grades.length;
-  const gradeY = (gradeOrder: number) => {
-    const index = timeline.grades.findIndex((grade) => grade.order === gradeOrder);
+  const gradeY = (gradeId: string) => {
+    const index = timeline.grades.findIndex((grade) => grade.id === gradeId);
     const gradeIndex = index >= 0 ? index : 0;
-    return gradeCount === 1 ? margin.top + plotHeight / 2 : baseline - (gradeIndex / (gradeCount - 1)) * plotHeight;
+    return baseline - getGradeLevelRatio(gradeIndex, gradeCount) * plotHeight;
   };
   const attemptX = (attempt: SessionGradeTimelineAttempt) => margin.left + (attempt.elapsedMs / Math.max(timeline.durationMs, 1)) * plotWidth;
   const xLabels = getXAxisLabels(timeline.durationMs);
@@ -53,7 +53,7 @@ export function SessionGradeTimeline({ session, climbs, attempts, grades }: Sess
             Grade
           </text>
           {timeline.grades.map((grade) => {
-            const y = gradeY(grade.order);
+            const y = gradeY(grade.id);
             return (
               <g key={grade.id}>
                 <line className="grade-timeline-grid-line" x1={margin.left} y1={y} x2={width - margin.right} y2={y} />
@@ -76,7 +76,7 @@ export function SessionGradeTimeline({ session, climbs, attempts, grades }: Sess
           })}
           {timeline.attempts.map((attempt) => {
             const x = attemptX(attempt);
-            const y = gradeY(attempt.gradeOrder);
+            const y = gradeY(attempt.gradeId);
             const selected = selectedAttempt?.attemptId === attempt.attemptId;
             return (
               <g key={attempt.attemptId} className="grade-timeline-attempt" onClick={() => setSelectedAttemptId(attempt.attemptId)}>
