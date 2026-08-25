@@ -67,13 +67,16 @@ export function ClimbList({
             <div className="climb-list">
               {activityItems.map((item) => {
                 if (item.type === "training") {
+                  const completedSetCount = item.sets.filter((set) => set.endedAt !== null).length;
+                  const isSelectedTraining = item.sets.some((set) => set.id === currentStrengthSetId);
                   return (
-                    <div className={`climb-row training-row ${item.set.id === currentStrengthSetId ? "selected" : ""}`} key={item.set.id}>
+                    <div className={`climb-row training-row ${isSelectedTraining ? "selected" : ""}`} key={item.set.id}>
                       <button className="climb-select" onClick={() => onSelectStrength?.(item.set)}>
                         <span>
-                          <strong>{item.set.name}</strong>
+                          <strong>{item.name}</strong>
+                          <small className="climb-venue">{formatStrengthSetMeta(item.set)}</small>
                         </span>
-                        <span className="muted">{formatStrengthSetMeta(item.set)}</span>
+                        <span className="muted">{completedSetCount} sets</span>
                       </button>
                     </div>
                   );
@@ -117,5 +120,5 @@ function formatStrengthSetMeta(set: StrengthSet): string {
   if (set.workDurationSeconds !== null && set.workDurationSeconds !== undefined) {
     parts.push(`${set.workDurationSeconds} sec`);
   }
-  return parts.join(", ") || "Strength set";
+  return parts.join(", ") || "Strength sets";
 }

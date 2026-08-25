@@ -71,6 +71,60 @@ describe("recent activity", () => {
     expect(buildRecentActivity(climbs, attempts, strengthSets, "training").map((item) => item.type)).toEqual(["training", "training"]);
   });
 
+  it("groups training activity by exercise name", () => {
+    const items = buildRecentActivity(
+      climbs,
+      attempts,
+      [
+        ...strengthSets,
+        {
+          id: "set-3",
+          sessionId: "s",
+          name: "Weighted Pull-up",
+          startedAt: "2026-08-17T14:30:00.000Z",
+          endedAt: "2026-08-17T14:30:20.000Z",
+          createdAt: "2026-08-17T14:30:00.000Z",
+        },
+      ],
+      "training",
+    );
+
+    expect(items).toHaveLength(2);
+    expect(items.map((item) => (item.type === "training" ? item.name : ""))).toEqual(["Weighted Pull-up", "Front Lever"]);
+    expect(items[0].type === "training" ? items[0].sets.map((set) => set.id) : []).toEqual(["set-3", "set-1"]);
+  });
+
+  it("keeps same-name training activity separate when load format differs", () => {
+    const items = buildRecentActivity(
+      climbs,
+      attempts,
+      [
+        {
+          ...strengthSets[0],
+          id: "pull-10",
+          name: "Weighted Pull-up",
+          weight: 10,
+          reps: 5,
+          workDurationSeconds: 20,
+        },
+        {
+          ...strengthSets[0],
+          id: "pull-20",
+          name: "Weighted Pull-up",
+          weight: 20,
+          reps: 5,
+          workDurationSeconds: 20,
+          startedAt: "2026-08-17T14:35:00.000Z",
+          endedAt: "2026-08-17T14:35:20.000Z",
+        },
+      ],
+      "training",
+    );
+
+    expect(items).toHaveLength(2);
+    expect(items.map((item) => (item.type === "training" ? item.set.id : ""))).toEqual(["pull-20", "pull-10"]);
+  });
+
   it("derives recent distinct strength names without blocking arbitrary input", () => {
     expect(getStrengthNameSuggestions([...strengthSets, { ...strengthSets[0], id: "set-3", startedAt: "2026-08-17T14:30:00.000Z" }])).toEqual([
       "Weighted Pull-up",

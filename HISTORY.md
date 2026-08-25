@@ -152,6 +152,24 @@ Training effort uses the same style of slider as climb attempt effort because th
 
 Training set details were tuned for compact mobile review. Weight, reps, and work duration are displayed as plain values such as "10 kg, 5 reps, 10 sec" rather than symbolic formulas, because the latter was harder to scan beside climbing activity.
 
+Training recording later moved closer to the climb-card mental model. A training name plus its load format is treated like a climb problem identity. The practical meaning is: "Weighted Pull-up, 10 kg, 5 reps, 10 sec" and "Weighted Pull-up, 20 kg, 5 reps, 10 sec" are different training cards, even though their exercise name is the same.
+
+Recent Activity for training should therefore not grow on every START. It should show one recent card per training identity, and the visible sets count should change as completed sets accumulate. This mirrors the climbing side: one climb card can contain multiple attempts.
+
+Set count is intentionally completion-based. Typing a name, changing a draft, or pressing START should not increment the count. A set becomes part of the count only after FINISH, because that is when the physical action has become a completed record.
+
+When the user types a new training name into a draft card, the supporting fields should reset. This prevents accidentally carrying weight, reps, work duration, or memo from an unrelated exercise. When the name matches an existing recent training identity, the latest matching card should repopulate those values so repeat sets are fast.
+
+The word "sets" is preferred in user-facing training labels because the training card represents a collection of completed sets, not a single isolated set. Recent Activity therefore uses wording such as "3 sets" rather than "Set 3".
+
+The phrase "set in progress" was removed from the active training state. The active state should be obvious from the timer and FINISH / cancel controls, and extra labels made the card feel heavier without adding useful information.
+
+Climb and Training share the same rest interval concept. Rest is not owned by a climb card or a training card. It is the elapsed time since the last completed physical activity in the session, whether that previous activity was a climbing attempt or a strength set.
+
+During an active climb attempt or active training set, the same interval display area becomes the action timer for the current activity. A separate second timer on the training card was rejected because it created two competing time displays and made the shared interval model harder to understand.
+
+Training memo follows the climb memo pattern. It belongs on the main training card, above the START / FINISH flow, rather than being hidden only in the post-finish effort step. This lets the user describe the exercise or set context in the same place they enter the training details.
+
 ## Current Climb Editing Semantics
 
 Current Climb editing was refined around a real correction scenario: after pressing START, the user may notice that the grade, wall angle, name, or wall context was entered incorrectly. During an active attempt, those edits should correct the current climb record, not prepare a future climb.
@@ -178,10 +196,21 @@ History is documented in Q&A rather than explained below the Home button. Home s
 
 The PWA icon was replaced with a custom visual mark so the installed app feels more intentional on the iPhone home screen. The icon change is presentation only and does not affect storage, routing, service worker behavior, or the local-first data model.
 
+## Statistics
+
+The first statistics feature is an Activity Visualizer rather than a full analytics suite. The goal is to show continuity of activity over time from existing raw records, not to create stored statistics or a separate reporting data model.
+
+Activity, Climb, and Training filters answer different questions. Activity combines attempts and completed strength sets, Climb isolates climbing attempts, and Training isolates completed strength sets. The chart stays derived from IndexedDB records.
+
+Effort filtering uses the same seven-step effort language as attempt and training input. The slider interaction was deliberately aligned with the recording UI so the filter control feels like the same concept viewed from a different angle.
+
+RPE and Performance overlays are session-level review signals. They are drawn separately from activity counts so subjective session review values are not confused with the number of attempts or sets.
+
+Bucket details were added for mobile because hover-only chart inspection is not useful on iPhone. Tapping a bucket should reveal enough detail to understand that period without requiring a desktop pointer.
+
 ## Current Out Of Scope
 
 - Authentication
 - Supabase or cloud sync
-- Statistics and charts
 - AI analysis
 - JSON merge import

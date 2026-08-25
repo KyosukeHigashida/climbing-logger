@@ -368,6 +368,10 @@ h2 {
   gap: 12px;
 }
 
+.current-training-card .climb-start-button {
+  width: 100%;
+}
+
 .training-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -405,18 +409,6 @@ h2 {
   color: rgba(170, 181, 171, 0.62);
   font-size: clamp(0.78rem, 3.7vw, 0.98rem);
   font-weight: 650;
-}
-
-.training-progress {
-  display: grid;
-  justify-items: center;
-  gap: 4px;
-  padding: 12px;
-}
-
-.training-progress strong {
-  font-size: 2rem;
-  font-variant-numeric: tabular-nums;
 }
 
 .climb-memo-field {

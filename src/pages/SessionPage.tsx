@@ -26,7 +26,7 @@ import {
   updateStrengthSetMetadata,
 } from "../db/repository";
 import type { Attempt, AttemptEffort, AttemptResult, Board, Climb, Grade, Gym, Session, StrengthSet, WallAngle } from "../types/domain";
-import { getAttemptCount, getAttemptEndTime, isActiveAttempt, sortAttemptsByTimestamp } from "../utils/attempts";
+import { getAttemptCount, getAttemptEndTime, isActiveAttempt } from "../utils/attempts";
 import {
   getSavedCurrentClimbId,
   getSavedCurrentWallSelection,
@@ -34,7 +34,7 @@ import {
   saveCurrentWallSelection,
 } from "../utils/currentClimb";
 import { getReusableWallAnglePreset } from "../utils/wallAngles";
-import { getStrengthNameSuggestions } from "../utils/recentActivity";
+import { getLatestStrengthSetByName, getStrengthNameSuggestions, getStrengthSetCardKey } from "../utils/recentActivity";
 import { getOptionalNumericInputError, parseOptionalNumericInput } from "../utils/numericInput";
 
 type WallSelection = {
@@ -59,6 +59,7 @@ type TrainingDraft = {
   weight: string;
   reps: string;
   workDurationSeconds: string;
+  memo: string;
 };
 
 export function SessionPage() {
@@ -89,12 +90,11 @@ export function SessionPage() {
   const [pendingStrengthSetId, setPendingStrengthSetId] = useState<string | null>(null);
   const [pendingEffort, setPendingEffort] = useState<AttemptEffort>(4);
   const [pendingAttemptNote, setPendingAttemptNote] = useState("");
-  const [pendingStrengthMemo, setPendingStrengthMemo] = useState("");
   const [skipEffort, setSkipEffort] = useState(false);
   const [finishingAttemptId, setFinishingAttemptId] = useState<string | null>(null);
   const [finishingStrengthSetId, setFinishingStrengthSetId] = useState<string | null>(null);
   const [climbDraft, setClimbDraft] = useState<ClimbDraft | null>(null);
-  const [trainingDraft, setTrainingDraft] = useState<TrainingDraft>({ name: "", weight: "", reps: "", workDurationSeconds: "" });
+  const [trainingDraft, setTrainingDraft] = useState<TrainingDraft>({ name: "", weight: "", reps: "", workDurationSeconds: "", memo: "" });
   const [isTrainingDraftOpen, setIsTrainingDraftOpen] = useState(false);
   const [selectedStrengthSetId, setSelectedStrengthSetId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -368,13 +368,18 @@ export function SessionPage() {
   const pendingStrengthSet = pendingStrengthSetId
     ? strengthSets.find((strengthSet) => strengthSet.id === pendingStrengthSetId) ?? null
     : null;
+  const selectedStrengthSet = selectedStrengthSetId ? strengthSets.find((strengthSet) => strengthSet.id === selectedStrengthSetId) ?? null : null;
+  const visibleStrengthSet = activeStrengthSet ?? pendingStrengthSet ?? selectedStrengthSet;
+  const currentTrainingSetCount = visibleStrengthSet
+    ? getCompletedStrengthSetCountForDraft(strengthSets, strengthSetToDraft(visibleStrengthSet))
+    : getCompletedStrengthSetCountForDraft(strengthSets, trainingDraft);
+  const currentTrainingIntervalSince = activeStrengthSet?.startedAt ?? getLastCompletedPhysicalActivityEnd(attempts, strengthSets);
   const isFinishingCurrentAttempt = finishingAttemptId !== null && finishingAttemptId === currentClimbActiveAttempt?.id;
   const isFinishingStrengthSet = finishingStrengthSetId !== null && finishingStrengthSetId === activeStrengthSet?.id;
   const shouldShowTrainingCard = Boolean(isTrainingDraftOpen || activeStrengthSet || pendingStrengthSet || selectedStrengthSetId);
   const trainingDraftError = getTrainingDraftError(trainingDraft);
   const editingAttempt = attempts.find((attempt) => attempt.id === editingAttemptId) ?? null;
-  const lastCompletedAttempt = [...sortAttemptsByTimestamp(attempts)].reverse().find((attempt) => getAttemptEndTime(attempt));
-  const restStartedAt = getAttemptEndTime(lastCompletedAttempt ?? ({} as Attempt)) ?? activeSession.startedAt;
+  const restStartedAt = getLastCompletedPhysicalActivityEnd(attempts, strengthSets) ?? activeSession.startedAt;
   const initialWallAnglePreset = getReusableWallAnglePreset(climbs, activeSession.initialGymId ?? null, wallAngles);
   const strengthNameSuggestions = getStrengthNameSuggestions(strengthSets);
   const selectedBoardGrades = wallSelection.wallBoardId
@@ -473,7 +478,7 @@ export function SessionPage() {
   function handleStartTrainingDraft() {
     setError(null);
     setSelectedStrengthSetId(null);
-    setTrainingDraft({ name: "", weight: "", reps: "", workDurationSeconds: "" });
+    setTrainingDraft({ name: "", weight: "", reps: "", workDurationSeconds: "", memo: "" });
     setIsTrainingDraftOpen(true);
   }
 
@@ -535,33 +540,37 @@ export function SessionPage() {
         weight: parseWeightInput(trainingDraft.weight),
         reps: parseRepsInput(trainingDraft.reps),
         workDurationSeconds: parseWorkDurationInput(trainingDraft.workDurationSeconds),
+        memo: trainingDraft.memo,
       });
       upsertStrengthSet(strengthSet);
       setSelectedStrengthSetId(strengthSet.id);
       setIsTrainingDraftOpen(true);
       setCurrentActivityType("training");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not start strength set.");
+      setError(err instanceof Error ? err.message : "Could not start strength sets.");
     }
   }
 
-  async function handleUpdateActiveStrengthSet(update: Partial<TrainingDraft>) {
-    setTrainingDraft((current) => ({ ...current, ...update }));
-    if (!activeStrengthSet) {
+  async function handleUpdateTrainingDraft(update: Partial<TrainingDraft>) {
+    const normalizedUpdate = normalizeTrainingDraftUpdate(trainingDraft, update, strengthSets, Boolean(activeStrengthSet || pendingStrengthSet || selectedStrengthSet));
+    setTrainingDraft((current) => ({ ...current, ...normalizedUpdate }));
+    const targetStrengthSet = activeStrengthSet ?? selectedStrengthSet;
+    if (!targetStrengthSet || pendingStrengthSet) {
       return;
     }
     try {
-      const nextDraft = { ...trainingDraft, ...update };
-      const strengthSet = await updateStrengthSet(activeStrengthSet.id, {
+      const nextDraft = { ...trainingDraft, ...normalizedUpdate };
+      const strengthSet = await updateStrengthSet(targetStrengthSet.id, {
         name: nextDraft.name,
         weight: parseWeightInput(nextDraft.weight),
         reps: parseRepsInput(nextDraft.reps),
         workDurationSeconds: parseWorkDurationInput(nextDraft.workDurationSeconds),
+        memo: nextDraft.memo,
       });
       upsertStrengthSet(strengthSet);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not update strength set.");
+      setError(err instanceof Error ? err.message : "Could not update strength sets.");
     }
   }
 
@@ -576,16 +585,16 @@ export function SessionPage() {
       upsertStrengthSet(strengthSet);
       setPendingStrengthSetId(strengthSet.id);
       setPendingEffort(strengthSet.effort ?? 4);
-      setPendingStrengthMemo(strengthSet.memo ?? "");
+      setTrainingDraft(strengthSetToDraft(strengthSet));
       setFinishingStrengthSetId(null);
     } catch (err) {
       setFinishingStrengthSetId(null);
-      setError(err instanceof Error ? err.message : "Could not finish strength set.");
+      setError(err instanceof Error ? err.message : "Could not finish strength sets.");
     }
   }
 
   async function handleCancelStrengthSet() {
-    if (!activeStrengthSet || !window.confirm("Cancel this active strength set?")) {
+    if (!activeStrengthSet || !window.confirm("Cancel these active strength sets?")) {
       return;
     }
     setError(null);
@@ -593,7 +602,7 @@ export function SessionPage() {
       await cancelStrengthSet(activeStrengthSet.id);
       removeStrengthSet(activeStrengthSet.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not cancel strength set.");
+      setError(err instanceof Error ? err.message : "Could not cancel strength sets.");
     }
   }
 
@@ -603,12 +612,11 @@ export function SessionPage() {
     }
     setError(null);
     try {
-      const strengthSet = await updateStrengthSetMetadata(pendingStrengthSetId, skipEffort ? null : pendingEffort, pendingStrengthMemo);
+      const strengthSet = await updateStrengthSetMetadata(pendingStrengthSetId, skipEffort ? null : pendingEffort, trainingDraft.memo);
       upsertStrengthSet(strengthSet);
       setPendingStrengthSetId(null);
-      setPendingStrengthMemo("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save strength set.");
+      setError(err instanceof Error ? err.message : "Could not save strength sets.");
     }
   }
 
@@ -862,16 +870,16 @@ export function SessionPage() {
             suggestions={strengthNameSuggestions}
             isBusy={isFinishingStrengthSet}
             pendingEffort={pendingEffort}
-            pendingMemo={pendingStrengthMemo}
+            setCount={currentTrainingSetCount}
+            intervalSince={currentTrainingIntervalSince}
             skipEffort={skipEffort}
             hasBlockingAttempt={Boolean(activeAttempt)}
             validationMessage={trainingDraftError}
-            onDraftChange={handleUpdateActiveStrengthSet}
+            onDraftChange={handleUpdateTrainingDraft}
             onStart={handleStartStrengthSet}
             onFinish={handleFinishStrengthSet}
             onCancel={handleCancelStrengthSet}
             onEffortChange={setPendingEffort}
-            onMemoChange={setPendingStrengthMemo}
             onSkipEffortChange={setSkipEffort}
             onSaveMetadata={handleSavePendingStrengthSet}
           />
@@ -1080,7 +1088,8 @@ function CurrentTrainingCard({
   suggestions,
   isBusy,
   pendingEffort,
-  pendingMemo,
+  setCount,
+  intervalSince,
   skipEffort,
   hasBlockingAttempt,
   validationMessage,
@@ -1089,7 +1098,6 @@ function CurrentTrainingCard({
   onFinish,
   onCancel,
   onEffortChange,
-  onMemoChange,
   onSkipEffortChange,
   onSaveMetadata,
 }: {
@@ -1099,7 +1107,8 @@ function CurrentTrainingCard({
   suggestions: string[];
   isBusy: boolean;
   pendingEffort: AttemptEffort;
-  pendingMemo: string;
+  setCount: number;
+  intervalSince: string | null;
   skipEffort: boolean;
   hasBlockingAttempt: boolean;
   validationMessage: string | null;
@@ -1108,7 +1117,6 @@ function CurrentTrainingCard({
   onFinish: () => void;
   onCancel: () => void;
   onEffortChange: (effort: AttemptEffort) => void;
-  onMemoChange: (memo: string) => void;
   onSkipEffortChange: (skip: boolean) => void;
   onSaveMetadata: () => void;
 }) {
@@ -1146,6 +1154,26 @@ function CurrentTrainingCard({
           />
         </label>
       </div>
+      <div className="climb-stats-layout training-derived-layout">
+        <div className="climb-stat-card">
+          <span className="metric-label">Sets</span>
+          <strong>{setCount}</strong>
+        </div>
+        <div className="climb-stat-card">
+          <span className="metric-label">Interval</span>
+          <strong>
+            {intervalSince ? <IntervalTimer since={intervalSince} /> : "--"}
+          </strong>
+        </div>
+      </div>
+      <label className="climb-memo-field">
+        Memo
+        <textarea
+          value={draft.memo}
+          placeholder="Training memo"
+          onChange={(event) => onDraftChange({ memo: event.target.value })}
+        />
+      </label>
       {validationMessage && <p className="error compact">{validationMessage}</p>}
 
       {pendingStrengthSet ? (
@@ -1158,36 +1186,82 @@ function CurrentTrainingCard({
             </label>
           </div>
           {skipEffort ? <p className="muted compact">Effort will not be recorded.</p> : <EffortInput value={pendingEffort} onChange={onEffortChange} />}
-          <label className="attempt-note-field">
-            Memo
-            <textarea value={pendingMemo} placeholder="Set memo" onChange={(event) => onMemoChange(event.target.value)} />
-          </label>
           <button className="primary full" onClick={onSaveMetadata}>
             Save
           </button>
         </div>
       ) : activeStrengthSet ? (
         <div className="attempt-action-grid">
-          <div className="training-progress">
-            <span className="label">SET IN PROGRESS</span>
-            <strong>
-              <IntervalTimer since={activeStrengthSet.startedAt} />
-            </strong>
-          </div>
           <button className="primary full" disabled={isBusy} onClick={onFinish}>
             FINISH
           </button>
           <button className="secondary full" disabled={isBusy} onClick={onCancel}>
-            Cancel Set
+            Cancel Sets
           </button>
         </div>
       ) : (
         <button className="primary climb-start-button" disabled={Boolean(hasBlockingAttempt || validationMessage)} onClick={onStart}>
-          START SET
+          START
         </button>
       )}
     </div>
   );
+}
+
+function getLastCompletedPhysicalActivityEnd(attempts: Attempt[], strengthSets: StrengthSet[]): string | null {
+  const attemptEnds = attempts.map((attempt) => getAttemptEndTime(attempt)).filter((endedAt): endedAt is string => Boolean(endedAt));
+  const strengthSetEnds = strengthSets.map((set) => set.endedAt).filter((endedAt): endedAt is string => Boolean(endedAt));
+
+  return [...attemptEnds, ...strengthSetEnds].sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null;
+}
+
+function getCompletedStrengthSetCountForDraft(strengthSets: StrengthSet[], draft: TrainingDraft): number {
+  const draftKey = getTrainingDraftCardKey(draft);
+  if (!draftKey) {
+    return 0;
+  }
+
+  return strengthSets.filter((set) => set.endedAt !== null && getStrengthSetCardKey(set) === draftKey).length;
+}
+
+function getTrainingDraftCardKey(draft: TrainingDraft): string | null {
+  try {
+    return getStrengthSetCardKey({
+      name: draft.name,
+      weight: parseWeightInput(draft.weight),
+      reps: parseRepsInput(draft.reps),
+      workDurationSeconds: parseWorkDurationInput(draft.workDurationSeconds),
+    });
+  } catch {
+    return null;
+  }
+}
+
+function normalizeTrainingDraftUpdate(
+  currentDraft: TrainingDraft,
+  update: Partial<TrainingDraft>,
+  strengthSets: StrengthSet[],
+  hasSavedTarget: boolean,
+): Partial<TrainingDraft> {
+  if (update.name === undefined || update.name === currentDraft.name || hasSavedTarget) {
+    return update;
+  }
+
+  const latestSet = getLatestStrengthSetByName(strengthSets, update.name);
+  if (latestSet) {
+    return {
+      ...strengthSetToDraft(latestSet),
+      name: update.name,
+    };
+  }
+
+  return {
+    ...update,
+    weight: "",
+    reps: "",
+    workDurationSeconds: "",
+    memo: "",
+  };
 }
 
 function createClimbDraft(climb: Climb): ClimbDraft {
@@ -1213,6 +1287,7 @@ function strengthSetToDraft(strengthSet: StrengthSet): TrainingDraft {
       strengthSet.workDurationSeconds === null || strengthSet.workDurationSeconds === undefined
         ? ""
         : String(strengthSet.workDurationSeconds),
+    memo: strengthSet.memo ?? "",
   };
 }
 

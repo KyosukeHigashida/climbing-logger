@@ -960,7 +960,7 @@ export async function startAttempt(sessionId: string, climbId: string): Promise<
 
 export async function startStrengthSet(
   sessionId: string,
-  input: Pick<StrengthSetUpdate, "name" | "weight" | "reps" | "workDurationSeconds">,
+  input: Pick<StrengthSetUpdate, "name" | "weight" | "reps" | "workDurationSeconds" | "memo">,
 ): Promise<StrengthSet> {
   const session = await db.sessions.get(sessionId);
   if (!session) {
@@ -980,7 +980,7 @@ export async function startStrengthSet(
     weight: normalizeOptionalNonNegativeNumber(input.weight ?? null, "Weight"),
     reps: normalizeOptionalNonNegativeInteger(input.reps ?? null, "Reps"),
     workDurationSeconds: normalizeOptionalNonNegativeNumber(input.workDurationSeconds ?? null, "Work duration"),
-    memo: null,
+    memo: normalizeOptionalText(input.memo ?? null),
     createdAt: timestamp,
   };
 
