@@ -26,7 +26,7 @@ import {
   updateStrengthSetMetadata,
 } from "../db/repository";
 import type { Attempt, AttemptEffort, AttemptResult, Board, Climb, Grade, Gym, Session, StrengthSet, WallAngle } from "../types/domain";
-import { getAttemptCount, getAttemptEndTime, isActiveAttempt } from "../utils/attempts";
+import { getAttemptCount, isActiveAttempt } from "../utils/attempts";
 import {
   getSavedCurrentClimbId,
   getSavedCurrentWallSelection,
@@ -34,7 +34,13 @@ import {
   saveCurrentWallSelection,
 } from "../utils/currentClimb";
 import { getReusableWallAnglePreset } from "../utils/wallAngles";
-import { getLatestStrengthSetByName, getStrengthNameSuggestions, getStrengthSetCardKey } from "../utils/recentActivity";
+import { getStrengthNameSuggestions } from "../utils/recentActivity";
+import {
+  getCompletedStrengthSetCountForIdentity,
+  getLastCompletedPhysicalActivityEnd,
+  getLatestStrengthSetByName,
+  type StrengthSetIdentity,
+} from "../utils/strengthSets";
 import { getOptionalNumericInputError, parseOptionalNumericInput } from "../utils/numericInput";
 
 type WallSelection = {
@@ -371,8 +377,8 @@ export function SessionPage() {
   const selectedStrengthSet = selectedStrengthSetId ? strengthSets.find((strengthSet) => strengthSet.id === selectedStrengthSetId) ?? null : null;
   const visibleStrengthSet = activeStrengthSet ?? pendingStrengthSet ?? selectedStrengthSet;
   const currentTrainingSetCount = visibleStrengthSet
-    ? getCompletedStrengthSetCountForDraft(strengthSets, strengthSetToDraft(visibleStrengthSet))
-    : getCompletedStrengthSetCountForDraft(strengthSets, trainingDraft);
+    ? getCompletedStrengthSetCountForIdentity(strengthSets, visibleStrengthSet)
+    : getCompletedStrengthSetCountForIdentity(strengthSets, trainingDraftToStrengthSetIdentity(trainingDraft));
   const currentTrainingIntervalSince = activeStrengthSet?.startedAt ?? getLastCompletedPhysicalActivityEnd(attempts, strengthSets);
   const isFinishingCurrentAttempt = finishingAttemptId !== null && finishingAttemptId === currentClimbActiveAttempt?.id;
   const isFinishingStrengthSet = finishingStrengthSetId !== null && finishingStrengthSetId === activeStrengthSet?.id;
@@ -1208,30 +1214,14 @@ function CurrentTrainingCard({
   );
 }
 
-function getLastCompletedPhysicalActivityEnd(attempts: Attempt[], strengthSets: StrengthSet[]): string | null {
-  const attemptEnds = attempts.map((attempt) => getAttemptEndTime(attempt)).filter((endedAt): endedAt is string => Boolean(endedAt));
-  const strengthSetEnds = strengthSets.map((set) => set.endedAt).filter((endedAt): endedAt is string => Boolean(endedAt));
-
-  return [...attemptEnds, ...strengthSetEnds].sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null;
-}
-
-function getCompletedStrengthSetCountForDraft(strengthSets: StrengthSet[], draft: TrainingDraft): number {
-  const draftKey = getTrainingDraftCardKey(draft);
-  if (!draftKey) {
-    return 0;
-  }
-
-  return strengthSets.filter((set) => set.endedAt !== null && getStrengthSetCardKey(set) === draftKey).length;
-}
-
-function getTrainingDraftCardKey(draft: TrainingDraft): string | null {
+function trainingDraftToStrengthSetIdentity(draft: TrainingDraft): StrengthSetIdentity | null {
   try {
-    return getStrengthSetCardKey({
+    return {
       name: draft.name,
       weight: parseWeightInput(draft.weight),
       reps: parseRepsInput(draft.reps),
       workDurationSeconds: parseWorkDurationInput(draft.workDurationSeconds),
-    });
+    };
   } catch {
     return null;
   }

@@ -8,6 +8,8 @@ type PhysicalAction = {
   endedAt: string;
 };
 
+export type StrengthSetIdentity = Pick<StrengthSet, "name" | "weight" | "reps" | "workDurationSeconds">;
+
 export function getStrengthSetNumbers(strengthSets: StrengthSet[]): Map<string, number> {
   const numbers = new Map<string, number>();
   const countsByName = new Map<string, number>();
@@ -20,6 +22,31 @@ export function getStrengthSetNumbers(strengthSets: StrengthSet[]): Map<string, 
   }
 
   return numbers;
+}
+
+export function getCompletedStrengthSetCountForIdentity(strengthSets: StrengthSet[], identity: StrengthSetIdentity | null): number {
+  if (!identity) {
+    return 0;
+  }
+
+  const identityKey = getStrengthSetCardKey(identity);
+  return strengthSets.filter((set) => set.endedAt !== null && getStrengthSetCardKey(set) === identityKey).length;
+}
+
+export function getLatestStrengthSetByName(strengthSets: StrengthSet[], name: string): StrengthSet | null {
+  const nameKey = getStrengthSetNameKey(name);
+  return [...strengthSets]
+    .filter((set) => getStrengthSetNameKey(set.name) === nameKey)
+    .sort((a, b) => new Date(getStrengthSetSortTime(b)).getTime() - new Date(getStrengthSetSortTime(a)).getTime())[0] ?? null;
+}
+
+export function getStrengthSetCardKey(set: StrengthSetIdentity): string {
+  return [
+    getStrengthSetNameKey(set.name) || "Untitled training",
+    normalizeNullableNumber(set.weight),
+    normalizeNullableNumber(set.reps),
+    normalizeNullableNumber(set.workDurationSeconds),
+  ].join("\u001f");
 }
 
 export function getStrengthSetIntervals(attempts: Attempt[], strengthSets: StrengthSet[]): Map<string, number | null> {
@@ -44,6 +71,10 @@ export function getStrengthSetIntervals(attempts: Attempt[], strengthSets: Stren
   return intervals;
 }
 
+export function getLastCompletedPhysicalActivityEnd(attempts: Attempt[], strengthSets: StrengthSet[]): string | null {
+  return buildPhysicalActions(attempts, strengthSets).sort((a, b) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime())[0]?.endedAt ?? null;
+}
+
 function buildPhysicalActions(attempts: Attempt[], strengthSets: StrengthSet[]): PhysicalAction[] {
   const attemptActions: PhysicalAction[] = attempts.filter(isCompletedAttempt).flatMap((attempt) => {
     const endedAt = getAttemptEndTime(attempt);
@@ -64,4 +95,12 @@ function sortStrengthSetsByStart(strengthSets: StrengthSet[]): StrengthSet[] {
 
 function getStrengthSetNameKey(name: string): string {
   return name.trim();
+}
+
+function getStrengthSetSortTime(set: StrengthSet): string {
+  return set.endedAt ?? set.startedAt;
+}
+
+function normalizeNullableNumber(value: number | null | undefined): string {
+  return value === null || value === undefined ? "" : String(value);
 }

@@ -1,5 +1,6 @@
 import type { Attempt, Climb, StrengthSet } from "../types/domain";
 import { getAttemptEndTime, getAttemptStartTime } from "./attempts";
+import { getStrengthSetCardKey } from "./strengthSets";
 
 export type RecentActivityFilter = "activity" | "climbs" | "training";
 
@@ -75,22 +76,6 @@ function buildTrainingItems(strengthSets: StrengthSet[]): RecentActivityItem[] {
   });
 }
 
-export function getLatestStrengthSetByName(strengthSets: StrengthSet[], name: string): StrengthSet | null {
-  const nameKey = getStrengthNameKey(name);
-  return [...strengthSets]
-    .filter((set) => getStrengthNameKey(set.name) === nameKey)
-    .sort((a, b) => new Date(getStrengthSetSortTime(b)).getTime() - new Date(getStrengthSetSortTime(a)).getTime())[0] ?? null;
-}
-
-export function getStrengthSetCardKey(set: Pick<StrengthSet, "name" | "weight" | "reps" | "workDurationSeconds">): string {
-  return [
-    getStrengthNameKey(set.name),
-    normalizeNullableNumber(set.weight),
-    normalizeNullableNumber(set.reps),
-    normalizeNullableNumber(set.workDurationSeconds),
-  ].join("\u001f");
-}
-
 export function getStrengthNameSuggestions(strengthSets: StrengthSet[]): string[] {
   const seen = new Set<string>();
   return [...strengthSets]
@@ -118,8 +103,4 @@ function getStrengthSetSortTime(set: StrengthSet): string {
 
 function getStrengthNameKey(name: string): string {
   return name.trim() || "Untitled training";
-}
-
-function normalizeNullableNumber(value: number | null | undefined): string {
-  return value === null || value === undefined ? "" : String(value);
 }
