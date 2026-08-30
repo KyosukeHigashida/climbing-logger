@@ -7,6 +7,8 @@ describe("theme utilities", () => {
     expect(isColorThemeId("slate")).toBe(true);
     expect(isColorThemeId("ember")).toBe(true);
     expect(isColorThemeId("dawn")).toBe(true);
+    expect(isColorThemeId("cloud")).toBe(true);
+    expect(isColorThemeId("mist")).toBe(true);
     expect(isColorThemeId("unknown")).toBe(false);
   });
 

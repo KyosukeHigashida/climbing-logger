@@ -3,6 +3,8 @@ export const colorThemes = [
   { id: "slate", label: "Slate" },
   { id: "ember", label: "Ember" },
   { id: "dawn", label: "Dawn" },
+  { id: "cloud", label: "Cloud" },
+  { id: "mist", label: "Mist" },
 ] as const;
 
 export type ColorThemeId = (typeof colorThemes)[number]["id"];

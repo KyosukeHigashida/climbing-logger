@@ -122,6 +122,66 @@
   --color-scheme: light;
 }
 
+:root[data-theme="cloud"] {
+  --color-page: #f6f8fb;
+  --color-hero-glow: rgba(88, 130, 180, 0.18);
+  --color-text: #16202b;
+  --color-text-rgb: 22, 32, 43;
+  --color-text-soft: #33465c;
+  --color-muted: #68778a;
+  --color-muted-rgb: 104, 119, 138;
+  --color-panel: #ffffff;
+  --color-panel-rgb: 255, 255, 255;
+  --color-surface: #edf2f7;
+  --color-surface-rgb: 237, 242, 247;
+  --color-border-rgb: 83, 99, 119;
+  --color-primary: #2f6fbb;
+  --color-primary-rgb: 47, 111, 187;
+  --color-primary-text: #f8fbff;
+  --color-danger: #c84f5f;
+  --color-danger-rgb: 200, 79, 95;
+  --color-danger-text: #fff8f8;
+  --color-danger-soft: #973747;
+  --color-fail: #c47a21;
+  --color-send: #258565;
+  --color-warning: #a66e09;
+  --color-blue: #475fc7;
+  --color-modal-backdrop: rgba(22, 32, 43, 0.34);
+  --color-control-bg: rgba(22, 32, 43, 0.055);
+  --color-control-bg-strong: rgba(22, 32, 43, 0.095);
+  --color-scheme: light;
+}
+
+:root[data-theme="mist"] {
+  --color-page: #edf6f3;
+  --color-hero-glow: rgba(67, 139, 130, 0.2);
+  --color-text: #112421;
+  --color-text-rgb: 17, 36, 33;
+  --color-text-soft: #2c4945;
+  --color-muted: #627a75;
+  --color-muted-rgb: 98, 122, 117;
+  --color-panel: #fbfffd;
+  --color-panel-rgb: 251, 255, 253;
+  --color-surface: #e2efeb;
+  --color-surface-rgb: 226, 239, 235;
+  --color-border-rgb: 72, 101, 96;
+  --color-primary: #167a72;
+  --color-primary-rgb: 22, 122, 114;
+  --color-primary-text: #f6fffc;
+  --color-danger: #c95145;
+  --color-danger-rgb: 201, 81, 69;
+  --color-danger-text: #fff8f6;
+  --color-danger-soft: #963b32;
+  --color-fail: #b97922;
+  --color-send: #2b8661;
+  --color-warning: #a2740f;
+  --color-blue: #3f70b5;
+  --color-modal-backdrop: rgba(17, 36, 33, 0.34);
+  --color-control-bg: rgba(17, 36, 33, 0.055);
+  --color-control-bg-strong: rgba(17, 36, 33, 0.095);
+  --color-scheme: light;
+}
+
 
 * {
   box-sizing: border-box;
@@ -314,6 +374,14 @@ h2 {
 
 .theme-swatch-dawn {
   background: linear-gradient(135deg, #f4f1e8 0 45%, #4f7f2d 45% 72%, #3165ad 72%);
+}
+
+.theme-swatch-cloud {
+  background: linear-gradient(135deg, #f6f8fb 0 45%, #2f6fbb 45% 72%, #258565 72%);
+}
+
+.theme-swatch-mist {
+  background: linear-gradient(135deg, #edf6f3 0 45%, #167a72 45% 72%, #3f70b5 72%);
 }
 
 .qa-item h3 {
