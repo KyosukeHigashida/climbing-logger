@@ -158,8 +158,8 @@ export function HomePage({ colorTheme = "forest", onColorThemeChange = () => und
           <h1>Climbing Log</h1>
         </div>
         <div className="home-hero-actions">
-          <button className="settings-button" onClick={() => setIsSettingsOpen(true)}>
-            Settings
+          <button className="settings-button" aria-label="Settings" title="Settings" onClick={() => setIsSettingsOpen(true)}>
+            ⚙
           </button>
           <button className="qa-button" onClick={() => setIsQaOpen(true)}>
             Q&A
