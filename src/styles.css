@@ -749,8 +749,9 @@ h2 {
 .summary-panel > div {
   min-height: 82px;
   padding: 12px;
+  border: 1px solid rgba(var(--color-border-rgb), 0.12);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(var(--color-surface-rgb), 0.42);
 }
 
 .metrics-grid strong,
