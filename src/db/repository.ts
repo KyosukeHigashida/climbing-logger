@@ -1293,6 +1293,75 @@ export async function exportAllData(): Promise<DataExport> {
   };
 }
 
+export async function exportSessionData(sessionId: string): Promise<DataExport> {
+  const session = await db.sessions.get(sessionId);
+  if (!session) {
+    throw new Error("Session does not exist.");
+  }
+
+  const [climbs, attempts, strengthSets] = await Promise.all([
+    db.climbs.where("sessionId").equals(sessionId).toArray(),
+    db.attempts.where("sessionId").equals(sessionId).toArray(),
+    db.strengthSets.where("sessionId").equals(sessionId).toArray(),
+  ]);
+
+  const gymIds = new Set<string>();
+  const boardIds = new Set<string>();
+  const gradeIds = new Set<string>();
+  const wallAngleIds = new Set<string>();
+
+  if (session.initialGymId) {
+    gymIds.add(session.initialGymId);
+  }
+  for (const climb of climbs) {
+    if (climb.gymId) {
+      gymIds.add(climb.gymId);
+    }
+    if (climb.wallType === "board" && climb.wallBoardId) {
+      boardIds.add(climb.wallBoardId);
+    }
+    if (climb.gradeId) {
+      gradeIds.add(climb.gradeId);
+    }
+    if (climb.wallAnglePresetId) {
+      wallAngleIds.add(climb.wallAnglePresetId);
+    }
+  }
+
+  const [gyms, boards, grades, wallAngles] = await Promise.all([
+    getRecordsByIds(db.gyms, gymIds),
+    getRecordsByIds(db.boards, boardIds),
+    db.grades
+      .filter((grade) => gradeIds.has(grade.id) || Boolean((grade.gymId && gymIds.has(grade.gymId)) || (grade.boardId && boardIds.has(grade.boardId))))
+      .toArray(),
+    db.wallAngles
+      .filter((wallAngle) =>
+        wallAngleIds.has(wallAngle.id) || Boolean((wallAngle.gymId && gymIds.has(wallAngle.gymId)) || (wallAngle.boardId && boardIds.has(wallAngle.boardId))),
+      )
+      .toArray(),
+  ]);
+
+  return {
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    exportedAt: nowIso(),
+    gyms,
+    boards,
+    grades,
+    wallAngles,
+    sessions: [session],
+    climbs,
+    attempts,
+    strengthSets,
+  };
+}
+
+async function getRecordsByIds<T extends { id: string }>(
+  table: { bulkGet(keys: string[]): Promise<Array<T | undefined>> },
+  ids: Set<string>,
+): Promise<T[]> {
+  return (await table.bulkGet([...ids])).filter((record): record is T => Boolean(record));
+}
+
 export async function restoreAllData(data: unknown): Promise<DataExport> {
   const backup = validateDataExport(data);
 
@@ -1504,14 +1573,26 @@ export function validateDataExport(data: unknown): DataExport {
     }
     if (climb.gradeId) {
       const grade = gradeById.get(climb.gradeId);
-      if (grade && climb.gymId && grade.gymId !== climb.gymId) {
-        throw new Error("Backup contains a climb whose gym and grade do not match.");
+      if (grade) {
+        if (climb.wallType === "board") {
+          if (!climb.wallBoardId || grade.boardId !== climb.wallBoardId) {
+            throw new Error("Backup contains a climb whose board and grade do not match.");
+          }
+        } else if (climb.gymId && grade.gymId !== climb.gymId) {
+          throw new Error("Backup contains a climb whose gym and grade do not match.");
+        }
       }
     }
     if (climb.wallAnglePresetId) {
       const wallAngle = wallAngleById.get(climb.wallAnglePresetId);
-      if (wallAngle && climb.gymId && wallAngle.gymId !== climb.gymId) {
-        throw new Error("Backup contains a climb whose gym and wall angle do not match.");
+      if (wallAngle) {
+        if (climb.wallType === "board") {
+          if (!climb.wallBoardId || wallAngle.boardId !== climb.wallBoardId) {
+            throw new Error("Backup contains a climb whose board and wall angle do not match.");
+          }
+        } else if (climb.gymId && wallAngle.gymId !== climb.gymId) {
+          throw new Error("Backup contains a climb whose gym and wall angle do not match.");
+        }
       }
     }
     if (climb.wallType === "board" && climb.wallBoardId && !boardIds.has(climb.wallBoardId)) {

@@ -10,6 +10,7 @@ import {
   getAllGrades,
   getAllBoards,
   getAllGyms,
+  exportSessionData,
   getSession,
   getSessionAttempts,
   getSessionClimbs,
@@ -122,6 +123,26 @@ export function SessionSummaryPage() {
       setReviewMessage(error instanceof Error ? error.message : "Could not save review.");
     } finally {
       setIsSavingReview(false);
+    }
+  }
+
+  async function handleExportSession() {
+    if (!sessionId) {
+      return;
+    }
+
+    try {
+      const data = await exportSessionData(sessionId);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      const exportedSession = data.sessions[0];
+      link.download = `climbing-log-session-${exportedSession.startedAt.slice(0, 10)}-${exportedSession.id}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Could not export session data.");
     }
   }
 
@@ -253,6 +274,13 @@ export function SessionSummaryPage() {
       <button className="secondary full reopen-session-button" onClick={handleReopenSession}>
         REOPEN SESSION
       </button>
+
+      <section className="section utility-section">
+        <h2>Session Data</h2>
+        <button className="secondary full" onClick={handleExportSession}>
+          Export this session
+        </button>
+      </section>
 
       <SessionGradeTimeline session={session} climbs={climbs} attempts={attempts} grades={grades} boards={boards} />
 

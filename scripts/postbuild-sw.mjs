@@ -5,6 +5,9 @@ import { join, relative, sep } from "node:path";
 const distDir = "dist";
 const swPath = join(distDir, "sw.js");
 const assetDirs = ["assets", "icons"];
+const basePath = normalizeBasePath(process.env.VITE_BASE_PATH ?? "/");
+const devScopePath = normalizeBasePath(process.env.VITE_DEV_BASE_PATH ?? `${basePath.replace(/\/dev\/$/, "/")}dev/`);
+const cacheScope = basePath.replace(/^\/|\/$/g, "").replace(/[^a-zA-Z0-9]+/g, "-") || "root";
 
 async function collectFiles(dir) {
   const entries = await readdir(dir, { withFileTypes: true });
@@ -41,6 +44,15 @@ const cacheVersion = versionHash.digest("hex").slice(0, 12);
 await writeFile(
   swPath,
   sw
-    .replace('"self.__CACHE_VERSION__"', JSON.stringify(`climbing-logger-${cacheVersion}`))
+    .replace('"self.__CACHE_VERSION__"', JSON.stringify(`climbing-logger-${cacheScope}-${cacheVersion}`))
+    .replace('"self.__CACHE_PREFIX__"', JSON.stringify(`climbing-logger-${cacheScope}-`))
+    .replace('"self.__APP_SCOPE__"', JSON.stringify(basePath))
+    .replace('"self.__DEV_SCOPE__"', JSON.stringify(devScopePath))
+    .replace("self.__OWNS_DEV_SCOPE__", JSON.stringify(basePath === devScopePath))
     .replace("self.__APP_ASSETS__ || []", JSON.stringify(assets, null, 2)),
 );
+
+function normalizeBasePath(value) {
+  const withLeadingSlash = value.startsWith("/") ? value : `/${value}`;
+  return withLeadingSlash.endsWith("/") ? withLeadingSlash : `${withLeadingSlash}/`;
+}

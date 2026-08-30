@@ -23,6 +23,7 @@ import {
   deleteWallAngle,
   endSession,
   exportAllData,
+  exportSessionData,
   finishAttempt,
   finishStrengthSet,
   getActiveAttempt,
@@ -1173,6 +1174,59 @@ describe("repository", () => {
       effort: 6,
       memo: "Good pull",
     });
+  });
+
+  it("exports one session with only its activity and referenced master data", async () => {
+    setNow("2026-08-17T09:00:00.000Z");
+    const gym = await createGym("BETA");
+    const gymGrade = await createGrade(gym.id, "2Q");
+    const unusedGymGrade = await createGrade(gym.id, "1Q");
+    const gymAngle = await createWallAngle(gym.id, 120);
+    const board = await createBoard("Kilter Board");
+    const boardGrade = await createBoardGrade(board.id, "V4");
+    const boardAngle = await createBoardWallAngle(board.id, 40);
+    const session = await createSession(gym.id);
+    const gymClimb = await createClimb(session.id, gymGrade.label, "Yellow", gym.id, gymGrade.id, gymAngle.angle, gymAngle.id);
+    const boardClimb = await createClimb(
+      session.id,
+      boardGrade.label,
+      "Board problem",
+      gym.id,
+      boardGrade.id,
+      boardAngle.angle,
+      boardAngle.id,
+      "board",
+      board.id,
+      "board memo",
+    );
+    const attempt = await createAttempt(session.id, gymClimb.id, "send");
+    const boardAttempt = await createAttempt(session.id, boardClimb.id, "fail");
+    const strengthSet = await startStrengthSet(session.id, { name: "Weighted Pull-up", weight: 10, reps: 5 });
+    await finishStrengthSet(strengthSet.id);
+
+    setNow("2026-08-17T10:00:00.000Z");
+    await endSession(session.id);
+    const otherSession = await createSession(gym.id);
+    const otherClimb = await createClimb(otherSession.id, gymGrade.label, "Other", gym.id, gymGrade.id);
+    const otherAttempt = await createAttempt(otherSession.id, otherClimb.id, "fail");
+
+    setNow("2026-08-17T10:05:00.000Z");
+    const exported = await exportSessionData(session.id);
+
+    expect(exported.schemaVersion).toBe(12);
+    expect(exported.exportedAt).toBe("2026-08-17T10:05:00.000Z");
+    expect(exported.sessions.map((item) => item.id)).toEqual([session.id]);
+    expect(exported.climbs.map((item) => item.id).sort()).toEqual([boardClimb.id, gymClimb.id].sort());
+    expect(exported.attempts.map((item) => item.id).sort()).toEqual([attempt.id, boardAttempt.id].sort());
+    expect(exported.strengthSets.map((item) => item.id)).toEqual([strengthSet.id]);
+    expect(exported.sessions.map((item) => item.id)).not.toContain(otherSession.id);
+    expect(exported.climbs.map((item) => item.id)).not.toContain(otherClimb.id);
+    expect(exported.attempts.map((item) => item.id)).not.toContain(otherAttempt.id);
+    expect(exported.gyms.map((item) => item.id)).toEqual([gym.id]);
+    expect(exported.boards.map((item) => item.id)).toEqual([board.id]);
+    expect(exported.grades.map((item) => item.id).sort()).toEqual([boardGrade.id, gymGrade.id, unusedGymGrade.id].sort());
+    expect(exported.wallAngles.map((item) => item.id).sort()).toEqual([boardAngle.id, gymAngle.id].sort());
+    expect(validateDataExport(exported)).toMatchObject({ sessions: [{ id: session.id }] });
   });
 
   it("restores a validated full JSON backup by replacing current local data", async () => {

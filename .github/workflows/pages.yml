@@ -2,7 +2,7 @@ name: Deploy GitHub Pages
 
 on:
   push:
-    branches: ["main", "master"]
+    branches: ["main", "master", "dev"]
   workflow_dispatch:
 
 permissions:
@@ -18,27 +18,92 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout production branch
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: prod
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
-      - name: Install dependencies
+          cache-dependency-path: prod/package-lock.json
+
+      - name: Install production dependencies
+        working-directory: prod
         run: npm ci
-      - name: Test
+
+      - name: Test production
+        working-directory: prod
         run: npm run test:run
-      - name: Typecheck
+
+      - name: Typecheck production
+        working-directory: prod
         run: npm run typecheck
-      - name: Build
+
+      - name: Build production
+        working-directory: prod
         run: npm run build
         env:
           VITE_BASE_PATH: /${{ github.event.repository.name }}/
+          VITE_DEV_BASE_PATH: /${{ github.event.repository.name }}/dev/
+
+      - name: Stage production site
+        run: |
+          mkdir -p site
+          cp -a prod/dist/. site/
+
+      - name: Check for dev branch
+        id: dev_branch
+        run: |
+          if git ls-remote --exit-code --heads https://github.com/${{ github.repository }}.git dev >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout dev branch
+        if: steps.dev_branch.outputs.exists == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          path: dev
+
+      - name: Install dependencies
+        if: steps.dev_branch.outputs.exists == 'true'
+        working-directory: dev
+        run: npm ci
+
+      - name: Test dev
+        if: steps.dev_branch.outputs.exists == 'true'
+        working-directory: dev
+        run: npm run test:run
+
+      - name: Typecheck dev
+        if: steps.dev_branch.outputs.exists == 'true'
+        working-directory: dev
+        run: npm run typecheck
+
+      - name: Build dev
+        if: steps.dev_branch.outputs.exists == 'true'
+        working-directory: dev
+        run: npm run build
+        env:
+          VITE_BASE_PATH: /${{ github.event.repository.name }}/dev/
+          VITE_DEV_BASE_PATH: /${{ github.event.repository.name }}/dev/
+
+      - name: Stage dev site
+        if: steps.dev_branch.outputs.exists == 'true'
+        run: |
+          mkdir -p site/dev
+          cp -a dev/dist/. site/dev/
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: site
 
   deploy:
     environment:
