@@ -1,7 +1,8 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ComponentProps } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ActiveSessionProvider } from "../context/ActiveSessionContext";
 import { db } from "../db/db";
 import { createGym, createSession, endSession, getActiveSession } from "../db/repository";
@@ -61,14 +62,29 @@ describe("HomePage", () => {
     await user.click(screen.getByRole("button", { name: /^Recent Sessions/ }));
     expect(within(recentSessions).getByText("BETA")).toBeInTheDocument();
   });
+
+  it("opens settings and selects a color theme", async () => {
+    const user = userEvent.setup();
+    const handleColorThemeChange = vi.fn();
+
+    renderHome({ colorTheme: "forest", onColorThemeChange: handleColorThemeChange });
+
+    await user.click(await screen.findByRole("button", { name: "Settings" }));
+    const settings = screen.getByRole("dialog", { name: "Settings" });
+
+    expect(within(settings).getByRole("button", { name: "Forest" })).toHaveAttribute("aria-pressed", "true");
+    await user.click(within(settings).getByRole("button", { name: "Slate" }));
+
+    expect(handleColorThemeChange).toHaveBeenCalledWith("slate");
+  });
 });
 
-function renderHome() {
+function renderHome(props: ComponentProps<typeof HomePage> = {}) {
   return render(
     <ActiveSessionProvider>
       <MemoryRouter initialEntries={["/"]}>
         <Routes>
-          <Route path="/" element={<HomePage />} />
+          <Route path="/" element={<HomePage {...props} />} />
           <Route path="/gyms" element={<div>Gym master route</div>} />
           <Route path="/boards" element={<div>Board master route</div>} />
         </Routes>

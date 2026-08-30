@@ -17,14 +17,21 @@ import {
 import { getAttemptCount } from "../utils/attempts";
 import { qaItems } from "../utils/qa";
 import { requestPersistentStorage } from "../utils/storage";
+import { colorThemes, type ColorThemeId } from "../utils/theme";
 import { formatSessionDuration, formatShortDate } from "../utils/time";
 
-export function HomePage() {
+type HomePageProps = {
+  colorTheme?: ColorThemeId;
+  onColorThemeChange?: (theme: ColorThemeId) => void;
+};
+
+export function HomePage({ colorTheme = "forest", onColorThemeChange = () => undefined }: HomePageProps) {
   const navigate = useNavigate();
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
   const [selectedGymId, setSelectedGymId] = useState<string>("");
   const [isQaOpen, setIsQaOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isEditingSessions, setIsEditingSessions] = useState(false);
   const [isRecentSessionsExpanded, setIsRecentSessionsExpanded] = useState(true);
   const activeSessionStore = useActiveSession();
@@ -150,9 +157,14 @@ export function HomePage() {
           <p className="eyebrow">Bouldering tracker</p>
           <h1>Climbing Log</h1>
         </div>
-        <button className="qa-button" onClick={() => setIsQaOpen(true)}>
-          Q&A
-        </button>
+        <div className="home-hero-actions">
+          <button className="settings-button" onClick={() => setIsSettingsOpen(true)}>
+            Settings
+          </button>
+          <button className="qa-button" onClick={() => setIsQaOpen(true)}>
+            Q&A
+          </button>
+        </div>
       </header>
 
       {activeSession ? (
@@ -223,6 +235,32 @@ export function HomePage() {
                   <h3>{item.question}</h3>
                   <p>{item.answer}</p>
                 </article>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {isSettingsOpen && (
+        <section className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Settings">
+          <div className="modal-panel">
+            <div className="section-heading">
+              <h2>Settings</h2>
+              <button className="small-text-action" onClick={() => setIsSettingsOpen(false)}>
+                Close
+              </button>
+            </div>
+            <div className="theme-list" aria-label="Color theme">
+              {colorThemes.map((theme) => (
+                <button
+                  key={theme.id}
+                  className={`theme-option ${colorTheme === theme.id ? "selected" : ""}`}
+                  onClick={() => onColorThemeChange(theme.id)}
+                  aria-pressed={colorTheme === theme.id}
+                >
+                  <span className={`theme-swatch theme-swatch-${theme.id}`} aria-hidden="true" />
+                  <span>{theme.label}</span>
+                </button>
               ))}
             </div>
           </div>

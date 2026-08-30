@@ -65,8 +65,8 @@ function pointToPercent(value: number, min: number, max: number): number {
 }
 
 function getTrackBackground(valuePercent: number, selectionMode: ScaleSelectionMode): string {
-  const base = "rgba(244, 247, 241, 0.18)";
-  const fill = "rgba(215, 244, 95, 0.86)";
+  const base = "rgba(var(--color-text-rgb), 0.18)";
+  const fill = "rgba(var(--color-primary-rgb), 0.86)";
   if (selectionMode === "left") {
     return `linear-gradient(to right, ${fill} 0%, ${fill} ${valuePercent}%, ${base} ${valuePercent}%, ${base} 100%)`;
   }
