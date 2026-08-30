@@ -148,7 +148,7 @@ export function GymsPage() {
             onChange={(event) => setNewGymName(event.target.value)}
             placeholder={isBoardMode ? "Board name" : "Gym name"}
           />
-          <button type="submit">{isBoardMode ? "+ Add Board" : "+ Add Gym"}</button>
+          <button type="submit" className="primary">{isBoardMode ? "+ Add Board" : "+ Add Gym"}</button>
         </form>
       </section>
 
@@ -516,7 +516,7 @@ function BoardEditor({
       </div>
       <form className="inline-form" onSubmit={handleAddGrade}>
         <input value={newGradeLabel} onChange={(event) => setNewGradeLabel(event.target.value)} placeholder="Grade label" />
-        <button type="submit">+ Add Grade</button>
+        <button type="submit" className="primary">+ Add Grade</button>
       </form>
 
       <div className="section-heading grade-heading">
@@ -560,7 +560,7 @@ function BoardEditor({
       </div>
       <form className="inline-form" onSubmit={handleAddAngle}>
         <input inputMode="decimal" value={newAngleValue} onChange={(event) => setNewAngleValue(event.target.value)} placeholder="Wall angle" />
-        <button type="submit">+ Add Angle</button>
+        <button type="submit" className="primary">+ Add Angle</button>
       </form>
 
       {message && <p className={message.includes("Could") || message.includes("only") ? "error" : "restore-message"}>{message}</p>}
@@ -901,7 +901,7 @@ function GymEditor({
           onChange={(event) => setNewGradeLabel(event.target.value)}
           placeholder="Grade label"
         />
-        <button type="submit">+ Add Grade</button>
+        <button type="submit" className="primary">+ Add Grade</button>
       </form>
 
       <div className="section-heading grade-heading">
@@ -950,7 +950,7 @@ function GymEditor({
           onChange={(event) => setNewAngleValue(event.target.value)}
           placeholder="Wall angle"
         />
-        <button type="submit">+ Add Angle</button>
+        <button type="submit" className="primary">+ Add Angle</button>
       </form>
 
       {message && <p className={message.includes("Could") || message.includes("only") ? "error" : "restore-message"}>{message}</p>}

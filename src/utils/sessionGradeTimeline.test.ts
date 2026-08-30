@@ -70,6 +70,41 @@ describe("session grade timeline", () => {
     expect(timeline.attempts.map((item) => item.attemptId)).toEqual(["gym-done"]);
   });
 
+  it("includes board climbs and fixes the axis to the selected board grade scale", () => {
+    const timeline = buildSessionGradeTimeline(
+      session(),
+      [{ ...climb("board", "b2"), grade: "V1", wallType: "board", wallBoardId: "board-a" }],
+      [attempt("board-done", "board", "2026-08-25T10:02:00.000Z")],
+      [...grades(), boardGrade("b1", "V0", 0), boardGrade("b2", "V1", 1), boardGrade("b3", "V2", 2)],
+      { type: "board", boardId: "board-a" },
+    );
+
+    expect(timeline.attempts).toHaveLength(1);
+    expect(timeline.attempts[0]).toMatchObject({
+      attemptId: "board-done",
+      gradeLabel: "V1",
+      gradeId: "b2",
+      gradeOrder: 1,
+    });
+    expect(timeline.grades.map((grade) => grade.id)).toEqual(["b1", "b2", "b3"]);
+  });
+
+  it("keeps archived board grades on the selected board axis when needed for history", () => {
+    const timeline = buildSessionGradeTimeline(
+      session(),
+      [{ ...climb("board", "archived-board"), grade: "V3", wallType: "board", wallBoardId: "board-a" }],
+      [attempt("board-done", "board", "2026-08-25T10:02:00.000Z")],
+      [...grades(), boardGrade("b1", "V0", 0), { ...boardGrade("archived-board", "V3", 3), isArchived: true }],
+      { type: "board", boardId: "board-a" },
+    );
+
+    expect(timeline.attempts[0]).toMatchObject({
+      gradeLabel: "V3",
+      gradeId: "archived-board",
+    });
+    expect(timeline.grades.map((grade) => grade.id)).toContain("archived-board");
+  });
+
   it("keeps historical climbs when the referenced grade is archived", () => {
     const timeline = buildSessionGradeTimeline(session(), [climb("c1", "archived")], [attempt("a1", "c1", "2026-08-25T10:01:00.000Z")], [
       ...grades(),
@@ -119,6 +154,18 @@ describe("session grade timeline", () => {
 
     expect(timeline.grades.map((grade) => grade.id)).toEqual(["g1", "g2", "g3"]);
   });
+
+  it("does not mix gym or other board grades into the selected board axis", () => {
+    const timeline = buildSessionGradeTimeline(
+      session(),
+      [{ ...climb("board", "b1"), grade: "V0", wallType: "board", wallBoardId: "board-a" }],
+      [attempt("board-done", "board", "2026-08-25T10:02:00.000Z")],
+      [...grades(), boardGrade("b1", "V0", 0), boardGrade("other-board", "V9", 9, "board-b")],
+      { type: "board", boardId: "board-a" },
+    );
+
+    expect(timeline.grades.map((grade) => grade.id)).toEqual(["b1"]);
+  });
 });
 
 function session(): Session {
@@ -166,6 +213,18 @@ function grade(id: string, label: string, order: number): Grade {
     id,
     gymId: "gym-a",
     boardId: null,
+    label,
+    order,
+    isArchived: false,
+    createdAt: "2026-08-25T09:00:00.000Z",
+  };
+}
+
+function boardGrade(id: string, label: string, order: number, boardId = "board-a"): Grade {
+  return {
+    id,
+    gymId: null,
+    boardId,
     label,
     order,
     isArchived: false,

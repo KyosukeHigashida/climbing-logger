@@ -8,6 +8,7 @@ import { useActiveSession } from "../context/ActiveSessionContext";
 import {
   deleteAttempt,
   getAllGrades,
+  getAllBoards,
   getAllGyms,
   getSession,
   getSessionAttempts,
@@ -17,7 +18,7 @@ import {
   updateAttempt,
   updateSessionReview,
 } from "../db/repository";
-import type { Attempt, Climb, Grade, Gym, Session, StrengthSet } from "../types/domain";
+import type { Attempt, Board, Climb, Grade, Gym, Session, StrengthSet } from "../types/domain";
 import { getFailCount, getSendCount } from "../utils/attempts";
 import { formatSessionDuration } from "../utils/time";
 import { useEffect, useState } from "react";
@@ -51,6 +52,7 @@ export function SessionSummaryPage() {
     [sessionId],
   );
   const gyms = useLiveQuery<Gym[]>(() => getAllGyms(), []);
+  const boards = useLiveQuery<Board[]>(() => getAllBoards(), []);
   const grades = useLiveQuery<Grade[]>(() => getAllGrades(), []);
 
   useEffect(() => {
@@ -68,7 +70,7 @@ export function SessionSummaryPage() {
     setReviewMessage(null);
   }, [sessionId]);
 
-  if (session === undefined || !climbs || !attempts || !strengthSets || !gyms || !grades) {
+  if (session === undefined || !climbs || !attempts || !strengthSets || !gyms || !boards || !grades) {
     return <main className="app-shell loading">Loading summary...</main>;
   }
 
@@ -252,7 +254,7 @@ export function SessionSummaryPage() {
         REOPEN SESSION
       </button>
 
-      <SessionGradeTimeline session={session} climbs={climbs} attempts={attempts} grades={grades} />
+      <SessionGradeTimeline session={session} climbs={climbs} attempts={attempts} grades={grades} boards={boards} />
 
       {editingAttempt && (
         <AttemptEditor

@@ -166,7 +166,7 @@ export function StrengthSetEditor({
         <button type="button" className="secondary" disabled={isSaving} onClick={onCancel}>
           Cancel
         </button>
-        <button type="submit" disabled={isSaving || Boolean(validationError)}>
+        <button type="submit" className="primary" disabled={isSaving || Boolean(validationError)}>
           Save
         </button>
       </div>

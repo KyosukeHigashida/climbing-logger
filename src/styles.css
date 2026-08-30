@@ -1950,6 +1950,24 @@ h2 {
   gap: 10px;
 }
 
+.grade-timeline-wall-select {
+  display: grid;
+  gap: 4px;
+  min-width: 132px;
+}
+
+.grade-timeline-wall-select select {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid rgba(212, 221, 209, 0.16);
+  border-radius: 8px;
+  padding: 0 10px;
+  background: #101713;
+  color: #f4f7f1;
+  font-size: 0.86rem;
+  font-weight: 850;
+}
+
 .grade-timeline-scroll {
   width: 100%;
   overflow-x: auto;

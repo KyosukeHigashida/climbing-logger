@@ -170,7 +170,7 @@ export function ClimbForm({
         <button type="button" className="secondary" onClick={onCancel}>
           Cancel
         </button>
-        <button type="submit" disabled={isSaving}>
+        <button type="submit" className="primary" disabled={isSaving}>
           {submitLabel}
         </button>
       </div>

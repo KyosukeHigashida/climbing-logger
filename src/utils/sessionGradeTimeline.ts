@@ -23,15 +23,20 @@ export type SessionGradeTimeline = {
   durationMs: number;
 };
 
+export type SessionGradeTimelineWall =
+  | { type: "gym" }
+  | { type: "board"; boardId: string };
+
 export function buildSessionGradeTimeline(
   session: Session,
   climbs: Climb[],
   attempts: Attempt[],
   grades: Grade[],
+  wall: SessionGradeTimelineWall = { type: "gym" },
 ): SessionGradeTimeline {
   const climbById = new Map(climbs.map((climb) => [climb.id, climb]));
   const gradeById = new Map(grades.map((grade) => [grade.id, grade]));
-  const gradeByGymAndLabel = buildGradeByGymAndLabel(grades);
+  const gradeByOwnerAndLabel = buildGradeByOwnerAndLabel(grades);
   const timelineGymIds = getTimelineGymIds(session, climbs);
   const sessionStartedMs = new Date(session.startedAt).getTime();
   const sessionEndedMs = session.endedAt ? new Date(session.endedAt).getTime() : sessionStartedMs;
@@ -40,11 +45,11 @@ export function buildSessionGradeTimeline(
     .filter(isCompletedAttempt)
     .flatMap((attempt): SessionGradeTimelineAttempt[] => {
       const climb = climbById.get(attempt.climbId);
-      if (!climb || climb.wallType === "board") {
+      if (!climb || !isClimbOnSelectedWall(climb, wall)) {
         return [];
       }
 
-      const resolvedGrade = resolveHistoricalGrade(climb, gradeById, gradeByGymAndLabel);
+      const resolvedGrade = resolveHistoricalGrade(climb, gradeById, gradeByOwnerAndLabel, wall);
       if (!resolvedGrade || !attempt.result) {
         return [];
       }
@@ -71,13 +76,13 @@ export function buildSessionGradeTimeline(
 
   const axisGradeById = new Map<string, Grade>();
   for (const grade of grades) {
-    if (isGymGradeForTimeline(grade) && grade.gymId && timelineGymIds.has(grade.gymId)) {
+    if (isGradeOnSelectedWall(grade, wall, timelineGymIds)) {
       axisGradeById.set(grade.id, grade);
     }
   }
   for (const attempt of timelineAttempts) {
     const historicalGrade = gradeById.get(attempt.gradeId);
-    if (historicalGrade && isGymGradeForTimeline(historicalGrade)) {
+    if (historicalGrade && isGradeForWallType(historicalGrade, wall)) {
       axisGradeById.set(historicalGrade.id, historicalGrade);
     }
   }
@@ -104,29 +109,31 @@ export function getGradeLevelRatio(gradeIndex: number, gradeCount: number): numb
 function resolveHistoricalGrade(
   climb: Climb,
   gradeById: Map<string, Grade>,
-  gradeByGymAndLabel: Map<string, Grade>,
+  gradeByOwnerAndLabel: Map<string, Grade>,
+  wall: SessionGradeTimelineWall,
 ): Grade | null {
   if (climb.gradeId) {
     const grade = gradeById.get(climb.gradeId);
-    return grade && isGymGradeForTimeline(grade) ? grade : null;
+    return grade && isGradeForWallType(grade, wall) ? grade : null;
   }
 
-  const gymId = climb.gymId ?? null;
   const label = climb.grade.trim();
-  if (!gymId || !label || label === "Ungraded") {
+  if (!label || label === "Ungraded") {
     return null;
   }
 
-  return gradeByGymAndLabel.get(getGymGradeLabelKey(gymId, label)) ?? null;
+  const ownerKey = getClimbGradeOwnerKey(climb, wall);
+  return ownerKey ? gradeByOwnerAndLabel.get(getGradeLabelKey(ownerKey, label)) ?? null : null;
 }
 
-function buildGradeByGymAndLabel(grades: Grade[]): Map<string, Grade> {
+function buildGradeByOwnerAndLabel(grades: Grade[]): Map<string, Grade> {
   const matches = new Map<string, Grade[]>();
   for (const grade of grades) {
-    if (!isGymGradeForTimeline(grade) || !grade.gymId) {
+    const ownerKey = getGradeOwnerKey(grade);
+    if (!ownerKey) {
       continue;
     }
-    const key = getGymGradeLabelKey(grade.gymId, grade.label);
+    const key = getGradeLabelKey(ownerKey, grade.label);
     matches.set(key, [...(matches.get(key) ?? []), grade]);
   }
 
@@ -137,8 +144,8 @@ function buildGradeByGymAndLabel(grades: Grade[]): Map<string, Grade> {
   );
 }
 
-function getGymGradeLabelKey(gymId: string, label: string): string {
-  return `${gymId}\u001f${label.trim()}`;
+function getGradeLabelKey(ownerKey: string, label: string): string {
+  return `${ownerKey}\u001f${label.trim()}`;
 }
 
 function getTimelineGymIds(session: Session, climbs: Climb[]): Set<string> {
@@ -156,6 +163,40 @@ function getTimelineGymIds(session: Session, climbs: Climb[]): Set<string> {
   return gymIds;
 }
 
-function isGymGradeForTimeline(grade: Grade): boolean {
+function isClimbOnSelectedWall(climb: Climb, wall: SessionGradeTimelineWall): boolean {
+  if (wall.type === "board") {
+    return climb.wallType === "board" && climb.wallBoardId === wall.boardId;
+  }
+  return climb.wallType !== "board";
+}
+
+function isGradeOnSelectedWall(grade: Grade, wall: SessionGradeTimelineWall, timelineGymIds: Set<string>): boolean {
+  if (wall.type === "board") {
+    return grade.boardId === wall.boardId && !grade.gymId;
+  }
+  return !!grade.gymId && !grade.boardId && timelineGymIds.has(grade.gymId);
+}
+
+function isGradeForWallType(grade: Grade, wall: SessionGradeTimelineWall): boolean {
+  if (wall.type === "board") {
+    return grade.boardId === wall.boardId && !grade.gymId;
+  }
   return !!grade.gymId && !grade.boardId;
+}
+
+function getClimbGradeOwnerKey(climb: Climb, wall: SessionGradeTimelineWall): string | null {
+  if (wall.type === "board") {
+    return climb.wallBoardId ? `board:${climb.wallBoardId}` : null;
+  }
+  return climb.gymId ? `gym:${climb.gymId}` : null;
+}
+
+function getGradeOwnerKey(grade: Grade): string | null {
+  if (grade.boardId && !grade.gymId) {
+    return `board:${grade.boardId}`;
+  }
+  if (grade.gymId && !grade.boardId) {
+    return `gym:${grade.gymId}`;
+  }
+  return null;
 }

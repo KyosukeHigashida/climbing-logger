@@ -39,6 +39,7 @@ import { getReusableWallAnglePreset } from "../utils/wallAngles";
 import { getStrengthNameSuggestions } from "../utils/recentActivity";
 import {
   getCompletedStrengthSetCountForIdentity,
+  getStrengthSetCardKey,
   getLastCompletedPhysicalActivityEnd,
   getLatestStrengthSetByName,
   type StrengthSetIdentity,
@@ -378,11 +379,11 @@ export function SessionPage() {
     ? strengthSets.find((strengthSet) => strengthSet.id === pendingStrengthSetId) ?? null
     : null;
   const selectedStrengthSet = selectedStrengthSetId ? strengthSets.find((strengthSet) => strengthSet.id === selectedStrengthSetId) ?? null : null;
-  const visibleStrengthSet = activeStrengthSet ?? pendingStrengthSet ?? selectedStrengthSet;
-  const currentTrainingSetCount = visibleStrengthSet
-    ? getCompletedStrengthSetCountForIdentity(strengthSets, visibleStrengthSet)
-    : getCompletedStrengthSetCountForIdentity(strengthSets, trainingDraftToStrengthSetIdentity(trainingDraft));
-  const currentTrainingIntervalSince = activeStrengthSet?.startedAt ?? getLastCompletedPhysicalActivityEnd(attempts, strengthSets);
+  const selectedStrengthSetMatchesDraft = selectedStrengthSet ? trainingDraftMatchesStrengthSet(trainingDraft, selectedStrengthSet) : false;
+  const visibleStrengthSet = activeStrengthSet ?? pendingStrengthSet ?? (selectedStrengthSetMatchesDraft ? selectedStrengthSet : null);
+  const currentTrainingIdentity = visibleStrengthSet ?? trainingDraftToStrengthSetIdentity(trainingDraft);
+  const currentTrainingSetCount = getCompletedStrengthSetCountForIdentity(strengthSets, currentTrainingIdentity);
+  const currentTrainingIntervalSince = activeStrengthSet?.startedAt ?? getLastCompletedPhysicalActivityEnd(attempts, strengthSets) ?? activeSession.startedAt;
   const isFinishingCurrentAttempt = finishingAttemptId !== null && finishingAttemptId === currentClimbActiveAttempt?.id;
   const isFinishingStrengthSet = finishingStrengthSetId !== null && finishingStrengthSetId === activeStrengthSet?.id;
   const shouldShowTrainingCard = Boolean(isTrainingDraftOpen || activeStrengthSet || pendingStrengthSet || selectedStrengthSetId);
@@ -562,9 +563,13 @@ export function SessionPage() {
   }
 
   async function handleUpdateTrainingDraft(update: Partial<TrainingDraft>) {
-    const normalizedUpdate = normalizeTrainingDraftUpdate(trainingDraft, update, strengthSets, Boolean(activeStrengthSet || pendingStrengthSet || selectedStrengthSet));
+    const hasLiveStrengthSet = Boolean(activeStrengthSet || pendingStrengthSet);
+    const normalizedUpdate = normalizeTrainingDraftUpdate(trainingDraft, update, strengthSets, hasLiveStrengthSet);
     setTrainingDraft((current) => ({ ...current, ...normalizedUpdate }));
-    const targetStrengthSet = activeStrengthSet ?? selectedStrengthSet;
+    if (!hasLiveStrengthSet && selectedStrengthSetId) {
+      setSelectedStrengthSetId(null);
+    }
+    const targetStrengthSet = activeStrengthSet;
     if (!targetStrengthSet || pendingStrengthSet) {
       return;
     }
@@ -1110,7 +1115,7 @@ function EditableClimbCard({
             aria-label="New wall angle"
           />
           <span>°</span>
-          <button type="submit">Add</button>
+          <button type="submit" className="primary">Add</button>
           <button
             type="button"
             className="secondary"
@@ -1232,6 +1237,14 @@ function CurrentTrainingCard({
             </label>
           </div>
           {skipEffort ? <p className="muted compact">Effort will not be recorded.</p> : <EffortInput value={pendingEffort} onChange={onEffortChange} />}
+          <label className="attempt-note-field">
+            Memo
+            <textarea
+              value={draft.memo}
+              placeholder="Training memo"
+              onChange={(event) => onDraftChange({ memo: event.target.value })}
+            />
+          </label>
           <button className="primary full" onClick={onSaveMetadata}>
             Save
           </button>
@@ -1265,6 +1278,11 @@ function trainingDraftToStrengthSetIdentity(draft: TrainingDraft): StrengthSetId
   } catch {
     return null;
   }
+}
+
+function trainingDraftMatchesStrengthSet(draft: TrainingDraft, strengthSet: StrengthSet): boolean {
+  const identity = trainingDraftToStrengthSetIdentity(draft);
+  return identity ? getStrengthSetCardKey(identity) === getStrengthSetCardKey(strengthSet) : false;
 }
 
 function normalizeTrainingDraftUpdate(

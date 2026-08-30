@@ -166,7 +166,7 @@ export function AttemptEditor({
         <button type="button" className="secondary" disabled={isSaving} onClick={onCancel}>
           Cancel
         </button>
-        <button type="submit" disabled={isSaving}>
+        <button type="submit" className="primary" disabled={isSaving}>
           Save
         </button>
       </div>

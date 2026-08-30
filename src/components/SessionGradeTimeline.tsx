@@ -1,7 +1,12 @@
 import { useMemo, useState } from "react";
-import type { Attempt, Climb, Grade, Session } from "../types/domain";
+import type { Attempt, Board, Climb, Grade, Session } from "../types/domain";
 import { effortLabels } from "../utils/effort";
-import { buildSessionGradeTimeline, getGradeLevelRatio, type SessionGradeTimelineAttempt } from "../utils/sessionGradeTimeline";
+import {
+  buildSessionGradeTimeline,
+  getGradeLevelRatio,
+  type SessionGradeTimelineAttempt,
+  type SessionGradeTimelineWall,
+} from "../utils/sessionGradeTimeline";
 import { formatIntervalDuration } from "../utils/time";
 
 type SessionGradeTimelineProps = {
@@ -9,21 +14,50 @@ type SessionGradeTimelineProps = {
   climbs: Climb[];
   attempts: Attempt[];
   grades: Grade[];
+  boards: Board[];
 };
 
 const chartHeight = 230;
 const margin = { top: 18, right: 18, bottom: 32, left: 42 };
 
-export function SessionGradeTimeline({ session, climbs, attempts, grades }: SessionGradeTimelineProps) {
-  const timeline = useMemo(() => buildSessionGradeTimeline(session, climbs, attempts, grades), [attempts, climbs, grades, session]);
+export function SessionGradeTimeline({ session, climbs, attempts, grades, boards }: SessionGradeTimelineProps) {
+  const boardOptions = useMemo(() => getTimelineBoardOptions(climbs, boards), [boards, climbs]);
+  const [selectedWallValue, setSelectedWallValue] = useState("gym");
+  const selectedWall = useMemo((): SessionGradeTimelineWall => {
+    if (selectedWallValue.startsWith("board:")) {
+      return { type: "board", boardId: selectedWallValue.replace("board:", "") };
+    }
+    return { type: "gym" };
+  }, [selectedWallValue]);
+  const selectedWallLabel = selectedWall.type === "board"
+    ? boardOptions.find((board) => board.id === selectedWall.boardId)?.name ?? "Board"
+    : "Gym Wall";
+  const timeline = useMemo(() => buildSessionGradeTimeline(session, climbs, attempts, grades, selectedWall), [attempts, climbs, grades, selectedWall, session]);
   const [selectedAttemptId, setSelectedAttemptId] = useState<string | null>(timeline.attempts[0]?.attemptId ?? null);
   const selectedAttempt = timeline.attempts.find((attempt) => attempt.attemptId === selectedAttemptId) ?? timeline.attempts[0] ?? null;
+  const controls = (
+    <label className="grade-timeline-wall-select">
+      <span className="metric-label">Wall</span>
+      <select value={selectedWallValue} onChange={(event) => setSelectedWallValue(event.target.value)}>
+        <option value="gym">Gym Wall</option>
+        {boardOptions.length > 0 && <option disabled>────────</option>}
+        {boardOptions.map((board) => (
+          <option key={board.id} value={`board:${board.id}`}>
+            {board.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 
   if (timeline.attempts.length === 0 || timeline.grades.length === 0) {
     return (
       <section className="section grade-timeline-section" aria-label="Grade Timeline">
-        <h2>Grade Timeline</h2>
-        <p className="empty">Gym Wall attempts with recoverable grade order will appear here.</p>
+        <div className="section-heading">
+          <h2>Grade Timeline</h2>
+          {controls}
+        </div>
+        <p className="empty">{selectedWallLabel} attempts with recoverable grade order will appear here.</p>
       </section>
     );
   }
@@ -44,7 +78,10 @@ export function SessionGradeTimeline({ session, climbs, attempts, grades }: Sess
 
   return (
     <section className="section grade-timeline-section" aria-label="Grade Timeline">
-      <h2>Grade Timeline</h2>
+      <div className="section-heading">
+        <h2>Grade Timeline</h2>
+        {controls}
+      </div>
       <div className="grade-timeline-scroll">
         <svg className="grade-timeline-chart" viewBox={`0 0 ${width} ${height}`} style={{ minWidth: width }} role="img" aria-label="Grade timeline chart">
           <line className="stats-axis" x1={margin.left} y1={margin.top} x2={margin.left} y2={baseline} />
@@ -98,6 +135,13 @@ export function SessionGradeTimeline({ session, climbs, attempts, grades }: Sess
       {selectedAttempt && <GradeTimelineDetails attempt={selectedAttempt} />}
     </section>
   );
+}
+
+function getTimelineBoardOptions(climbs: Climb[], boards: Board[]): Array<{ id: string; name: string }> {
+  const boardById = new Map(boards.map((board) => [board.id, board]));
+  return [...new Set(climbs.filter((climb) => climb.wallType === "board" && climb.wallBoardId).map((climb) => climb.wallBoardId as string))]
+    .map((boardId) => ({ id: boardId, name: boardById.get(boardId)?.name ?? "Archived Board" }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function GradeTimelineDetails({ attempt }: { attempt: SessionGradeTimelineAttempt }) {
