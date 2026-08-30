@@ -159,7 +159,10 @@ export function HomePage({ colorTheme = "forest", onColorThemeChange = () => und
         </div>
         <div className="home-hero-actions">
           <button className="settings-button" aria-label="Settings" title="Settings" onClick={() => setIsSettingsOpen(true)}>
-            ⚙
+            <svg className="settings-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 8.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8Z" />
+              <path d="M19.4 13.3c.1-.4.1-.9.1-1.3s0-.9-.1-1.3l2-1.5-2-3.5-2.4 1a8.5 8.5 0 0 0-2.2-1.3L14.5 3h-5l-.3 2.4A8.5 8.5 0 0 0 7 6.7l-2.4-1-2 3.5 2 1.5c-.1.4-.1.9-.1 1.3s0 .9.1 1.3l-2 1.5 2 3.5 2.4-1c.7.6 1.4 1 2.2 1.3l.3 2.4h5l.3-2.4c.8-.3 1.5-.7 2.2-1.3l2.4 1 2-3.5-2-1.5Z" />
+            </svg>
           </button>
           <button className="qa-button" onClick={() => setIsQaOpen(true)}>
             Q&A
