@@ -208,6 +208,26 @@ RPE and Performance overlays are session-level review signals. They are drawn se
 
 Bucket details were added for mobile because hover-only chart inspection is not useful on iPhone. Tapping a bucket should reveal enough detail to understand that period without requiring a desktop pointer.
 
+## Theme And Visual Polish
+
+Color was turned into a user-selectable theme rather than remaining an implicit collection of individual colors. The original dark green/lime look remains one option, but additional dark and light themes were added so the app can fit different phone environments and personal preferences.
+
+Light themes exposed places where the UI had relied too much on background contrast. Borders on buttons, summary metrics, recent sessions, and similar framed areas need to remain visible across themes, not only in the default dark palette.
+
+The Settings entry point should stay small and secondary. A text button competed with the Home title on narrow iPhone screens, so the control moved toward a compact icon. The iOS-style glossy gear was rejected because it felt visually foreign to the app; a flatter matte gear better matches the rest of the interface.
+
+## Memo Semantics
+
+Climb memo, training card memo, attempt memo, and set memo are intentionally separate concepts. A card memo describes the climb or training card itself. An attempt or set memo describes one completed action and is used for analysis such as why a fall happened or how a particular set felt.
+
+Training initially exposed a bug where the card memo and the post-set effort memo behaved as if they were the same field. That was corrected because training should follow the same mental model as climbing: the persistent card note is not the same as the per-action comment.
+
+Effort capture remains optional, but when the effort step is shown, its memo should belong to the just-finished attempt or set. Saving or skipping effort should not unexpectedly rewrite the visible card memo.
+
+## Test Stability Note
+
+History and calendar behavior should not depend on the real-world current month. A date change exposed that fixed calendar test data can become invisible when the system month changes. Calendar tests should anchor their sample records to the month being rendered unless they are explicitly testing cross-month behavior.
+
 ## Current Out Of Scope
 
 - Authentication

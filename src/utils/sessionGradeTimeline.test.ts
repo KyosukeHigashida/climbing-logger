@@ -35,6 +35,15 @@ describe("session grade timeline", () => {
     expect(timeline.grades.map((grade) => grade.id)).toEqual(["g1", "g2", "g3"]);
   });
 
+  it("excludes unused archived gym grades from the axis", () => {
+    const timeline = buildSessionGradeTimeline(session(), [climb("hard", "g3")], [attempt("a1", "hard", "2026-08-25T10:02:00.000Z")], [
+      ...grades(),
+      { ...grade("old-gym", "Old 2Q", 3), isArchived: true },
+    ]);
+
+    expect(timeline.grades.map((grade) => grade.id)).toEqual(["g1", "g2", "g3"]);
+  });
+
   it("keeps the same gym grade level stable across different sessions", () => {
     const first = buildSessionGradeTimeline(session(), [climb("c1", "g2")], [attempt("a1", "c1", "2026-08-25T10:01:00.000Z")], grades());
     const second = buildSessionGradeTimeline(
@@ -89,6 +98,18 @@ describe("session grade timeline", () => {
     expect(timeline.grades.map((grade) => grade.id)).toEqual(["b1", "b2", "b3"]);
   });
 
+  it("excludes unused archived board grades from the selected board axis", () => {
+    const timeline = buildSessionGradeTimeline(
+      session(),
+      [{ ...climb("board", "b1"), grade: "V0", wallType: "board", wallBoardId: "board-a" }],
+      [attempt("board-done", "board", "2026-08-25T10:02:00.000Z")],
+      [...grades(), boardGrade("b1", "V0", 0), { ...boardGrade("old-board", "V9", 9), isArchived: true }],
+      { type: "board", boardId: "board-a" },
+    );
+
+    expect(timeline.grades.map((grade) => grade.id)).toEqual(["b1"]);
+  });
+
   it("keeps archived board grades on the selected board axis when needed for history", () => {
     const timeline = buildSessionGradeTimeline(
       session(),
@@ -118,6 +139,27 @@ describe("session grade timeline", () => {
       gradeOrder: 3,
     });
     expect(timeline.grades.map((grade) => grade.id)).toContain("archived");
+  });
+
+  it("does not let unrelated archived grades change an active grade level", () => {
+    const withoutArchived = buildSessionGradeTimeline(
+      session(),
+      [climb("c1", "g2")],
+      [attempt("a1", "c1", "2026-08-25T10:01:00.000Z")],
+      grades(),
+    );
+    const withUnusedArchived = buildSessionGradeTimeline(
+      session(),
+      [climb("c1", "g2")],
+      [attempt("a1", "c1", "2026-08-25T10:01:00.000Z")],
+      [...grades(), { ...grade("unused-archived", "Old 3Q", 1), isArchived: true }],
+    );
+
+    const baseIndex = withoutArchived.grades.findIndex((grade) => grade.id === "g2");
+    const archivedIndex = withUnusedArchived.grades.findIndex((grade) => grade.id === "g2");
+
+    expect(withUnusedArchived.grades.map((grade) => grade.id)).toEqual(withoutArchived.grades.map((grade) => grade.id));
+    expect(getGradeLevelRatio(archivedIndex, withUnusedArchived.grades.length)).toBe(getGradeLevelRatio(baseIndex, withoutArchived.grades.length));
   });
 
   it("falls back to a unique gym grade label only when the order is safe to recover", () => {
@@ -165,6 +207,17 @@ describe("session grade timeline", () => {
     );
 
     expect(timeline.grades.map((grade) => grade.id)).toEqual(["b1"]);
+  });
+
+  it("does not mix unrelated archived gym grades into the gym wall axis", () => {
+    const timeline = buildSessionGradeTimeline(
+      session(),
+      [climb("gym", "g1")],
+      [attempt("a1", "gym", "2026-08-25T10:01:00.000Z")],
+      [...grades(), { ...grade("other-gym-archived", "Other Old", 9), gymId: "gym-b", isArchived: true }],
+    );
+
+    expect(timeline.grades.map((grade) => grade.id)).toEqual(["g1", "g2", "g3"]);
   });
 });
 
