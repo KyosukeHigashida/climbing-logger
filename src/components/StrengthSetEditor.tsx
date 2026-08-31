@@ -21,6 +21,7 @@ type StrengthSetEditorProps = {
       workDurationSeconds: number | null;
       effort?: EffortRating | null;
       memo?: string | null;
+      note?: string | null;
     },
   ) => Promise<unknown>;
 };
@@ -45,7 +46,7 @@ export function StrengthSetEditor({
   );
   const [effort, setEffort] = useState<EffortRating>(strengthSet.effort ?? 4);
   const [hasEffort, setHasEffort] = useState(strengthSet.effort !== null && strengthSet.effort !== undefined);
-  const [memo, setMemo] = useState(strengthSet.memo ?? "");
+  const [note, setNote] = useState(strengthSet.note ?? "");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,7 +71,7 @@ export function StrengthSetEditor({
         reps: parseOptionalNumericInput(reps, { label: "Reps", integer: true, min: 0 }),
         workDurationSeconds: parseOptionalNumericInput(workDurationSeconds, { label: "Work duration", min: 0 }),
         effort: hasEffort ? effort : null,
-        memo,
+        note,
       });
       onCancel();
     } catch (err) {
@@ -155,7 +156,7 @@ export function StrengthSetEditor({
         {hasEffort ? <EffortInput value={effort} onChange={setEffort} /> : <p className="muted">No effort set.</p>}
         <label className="attempt-note-field">
           Memo
-          <textarea value={memo} placeholder="Training memo" onChange={(event) => setMemo(event.target.value)} />
+          <textarea value={note} placeholder="Set memo" onChange={(event) => setNote(event.target.value)} />
         </label>
       </div>
       {(error || validationError) && <p className="error">{error ?? validationError}</p>}

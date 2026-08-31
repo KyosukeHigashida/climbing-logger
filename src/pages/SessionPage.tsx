@@ -100,6 +100,7 @@ export function SessionPage() {
   const [pendingStrengthSetId, setPendingStrengthSetId] = useState<string | null>(null);
   const [pendingEffort, setPendingEffort] = useState<AttemptEffort>(4);
   const [pendingAttemptNote, setPendingAttemptNote] = useState("");
+  const [pendingStrengthSetNote, setPendingStrengthSetNote] = useState("");
   const [skipEffort, setSkipEffort] = useState(false);
   const [finishingAttemptId, setFinishingAttemptId] = useState<string | null>(null);
   const [finishingStrengthSetId, setFinishingStrengthSetId] = useState<string | null>(null);
@@ -600,6 +601,7 @@ export function SessionPage() {
       upsertStrengthSet(strengthSet);
       setPendingStrengthSetId(strengthSet.id);
       setPendingEffort(strengthSet.effort ?? 4);
+      setPendingStrengthSetNote(strengthSet.note ?? "");
       setTrainingDraft(strengthSetToDraft(strengthSet));
       setFinishingStrengthSetId(null);
     } catch (err) {
@@ -627,9 +629,10 @@ export function SessionPage() {
     }
     setError(null);
     try {
-      const strengthSet = await updateStrengthSetMetadata(pendingStrengthSetId, skipEffort ? null : pendingEffort, trainingDraft.memo);
+      const strengthSet = await updateStrengthSetMetadata(pendingStrengthSetId, skipEffort ? null : pendingEffort, pendingStrengthSetNote);
       upsertStrengthSet(strengthSet);
       setPendingStrengthSetId(null);
+      setPendingStrengthSetNote("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save strength sets.");
     }
@@ -902,6 +905,7 @@ export function SessionPage() {
             suggestions={strengthNameSuggestions}
             isBusy={isFinishingStrengthSet}
             pendingEffort={pendingEffort}
+            pendingNote={pendingStrengthSetNote}
             setCount={currentTrainingSetCount}
             intervalSince={currentTrainingIntervalSince}
             skipEffort={skipEffort}
@@ -912,6 +916,7 @@ export function SessionPage() {
             onFinish={handleFinishStrengthSet}
             onCancel={handleCancelStrengthSet}
             onEffortChange={setPendingEffort}
+            onPendingNoteChange={setPendingStrengthSetNote}
             onSkipEffortChange={setSkipEffort}
             onSaveMetadata={handleSavePendingStrengthSet}
           />
@@ -1139,6 +1144,7 @@ function CurrentTrainingCard({
   suggestions,
   isBusy,
   pendingEffort,
+  pendingNote,
   setCount,
   intervalSince,
   skipEffort,
@@ -1149,6 +1155,7 @@ function CurrentTrainingCard({
   onFinish,
   onCancel,
   onEffortChange,
+  onPendingNoteChange,
   onSkipEffortChange,
   onSaveMetadata,
 }: {
@@ -1158,6 +1165,7 @@ function CurrentTrainingCard({
   suggestions: string[];
   isBusy: boolean;
   pendingEffort: AttemptEffort;
+  pendingNote: string;
   setCount: number;
   intervalSince: string | null;
   skipEffort: boolean;
@@ -1168,6 +1176,7 @@ function CurrentTrainingCard({
   onFinish: () => void;
   onCancel: () => void;
   onEffortChange: (effort: AttemptEffort) => void;
+  onPendingNoteChange: (note: string) => void;
   onSkipEffortChange: (skip: boolean) => void;
   onSaveMetadata: () => void;
 }) {
@@ -1240,9 +1249,9 @@ function CurrentTrainingCard({
           <label className="attempt-note-field">
             Memo
             <textarea
-              value={draft.memo}
-              placeholder="Training memo"
-              onChange={(event) => onDraftChange({ memo: event.target.value })}
+              value={pendingNote}
+              placeholder="Set memo"
+              onChange={(event) => onPendingNoteChange(event.target.value)}
             />
           </label>
           <button className="primary full" onClick={onSaveMetadata}>

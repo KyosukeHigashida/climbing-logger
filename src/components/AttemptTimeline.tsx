@@ -71,7 +71,7 @@ export function AttemptTimeline({ attempts, strengthSets = [], climbs, gyms = []
                         {set.effort !== null && set.effort !== undefined && (
                           <div className="timeline-effort">Effort: {effortLabels[set.effort]}</div>
                         )}
-                        {set.memo && <div className="timeline-note">{set.memo}</div>}
+                        {set.note && <div className="timeline-note">{set.note}</div>}
                         {onEditStrength && (
                           <button className="edit-attempt-button" onClick={() => onEditStrength(set)}>
                             Edit set

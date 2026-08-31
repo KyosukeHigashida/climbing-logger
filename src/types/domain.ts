@@ -100,6 +100,7 @@ export type StrengthSet = {
   workDurationSeconds?: number | null;
   effort?: EffortRating | null;
   memo?: string | null;
+  note?: string | null;
   createdAt: string;
   updatedAt?: string;
 };

@@ -774,13 +774,20 @@ describe("repository", () => {
 
   it("starts, updates, finishes, and annotates strength sets", async () => {
     const session = await createSession();
-    const set = await startStrengthSet(session.id, { name: "Weighted Pull-up", weight: 10, reps: 5, workDurationSeconds: null });
+    const set = await startStrengthSet(session.id, {
+      name: "Weighted Pull-up",
+      weight: 10,
+      reps: 5,
+      workDurationSeconds: null,
+      memo: "Card memo",
+    });
 
     expect(set).toMatchObject({
       sessionId: session.id,
       name: "Weighted Pull-up",
       weight: 10,
       reps: 5,
+      memo: "Card memo",
       endedAt: null,
     });
     expect((await getActiveStrengthSet(session.id))?.id).toBe(set.id);
@@ -793,7 +800,7 @@ describe("repository", () => {
     expect(await getActiveStrengthSet(session.id)).toBeNull();
 
     const annotated = await updateStrengthSetMetadata(set.id, 6, "Solid set");
-    expect(annotated).toMatchObject({ effort: 6, memo: "Solid set" });
+    expect(annotated).toMatchObject({ effort: 6, memo: "Card memo", note: "Solid set" });
   });
 
   it("cancels active strength sets", async () => {
@@ -1171,7 +1178,7 @@ describe("repository", () => {
       weight: 10,
       reps: 5,
       effort: 6,
-      memo: "Good pull",
+      note: "Good pull",
     });
   });
 

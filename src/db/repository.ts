@@ -45,6 +45,7 @@ export type StrengthSetUpdate = {
   workDurationSeconds?: number | null;
   effort?: EffortRating | null;
   memo?: string | null;
+  note?: string | null;
 };
 
 export type AttemptUpdate = {
@@ -1043,6 +1044,7 @@ export async function updateStrengthSet(strengthSetId: string, update: StrengthS
           ? null
           : validateEffortValue(update.effort),
     memo: update.memo === undefined ? strengthSet.memo ?? null : normalizeOptionalText(update.memo),
+    note: update.note === undefined ? strengthSet.note ?? null : normalizeOptionalText(update.note),
     updatedAt,
   };
 
@@ -1067,6 +1069,7 @@ export async function updateStrengthSet(strengthSetId: string, update: StrengthS
       workDurationSeconds: updatedStrengthSet.workDurationSeconds,
       effort: updatedStrengthSet.effort,
       memo: updatedStrengthSet.memo,
+      note: updatedStrengthSet.note,
       updatedAt,
     });
   });
@@ -1109,9 +1112,9 @@ export async function deleteStrengthSet(strengthSetId: string): Promise<void> {
 export async function updateStrengthSetMetadata(
   strengthSetId: string,
   effort: EffortRating | null,
-  memo?: string | null,
+  note?: string | null,
 ): Promise<StrengthSet> {
-  return updateStrengthSet(strengthSetId, { effort, memo });
+  return updateStrengthSet(strengthSetId, { effort, note });
 }
 
 export async function finishAttempt(attemptId: string, result: AttemptResult): Promise<Attempt> {
@@ -2103,6 +2106,7 @@ function validateStrengthSet(value: unknown): StrengthSet {
     reps: normalizeOptionalNonNegativeInteger(readOptionalNumber(value, "reps") ?? null, "Reps"),
     workDurationSeconds: normalizeOptionalNonNegativeNumber(readOptionalNumber(value, "workDurationSeconds") ?? null, "Work duration"),
     memo: readOptionalNullableString(value, "memo"),
+    note: readOptionalNullableString(value, "note"),
     createdAt: readIsoString(value, "createdAt"),
   };
   const effort = readOptionalNumber(value, "effort");

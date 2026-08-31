@@ -13,6 +13,9 @@ beforeEach(async () => {
 describe("HistoryPage", () => {
   it("selects a calendar day and opens the existing session summary route", async () => {
     const user = userEvent.setup();
+    const currentMonth = new Date();
+    const sessionADay = formatLocalDate(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 24));
+    const sessionBDay = formatLocalDate(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 25));
     await db.gyms.add({
       id: "gym-beta",
       name: "BETA",
@@ -22,41 +25,41 @@ describe("HistoryPage", () => {
     await db.sessions.bulkAdd([
       {
         id: "session-a",
-        startedAt: "2026-08-24T10:00:00+09:00",
-        endedAt: "2026-08-24T11:00:00+09:00",
+        startedAt: `${sessionADay}T10:00:00+09:00`,
+        endedAt: `${sessionADay}T11:00:00+09:00`,
         initialGymId: "gym-beta",
-        createdAt: "2026-08-24T10:00:00+09:00",
+        createdAt: `${sessionADay}T10:00:00+09:00`,
       },
       {
         id: "session-b",
-        startedAt: "2026-08-25T10:00:00+09:00",
-        endedAt: "2026-08-25T11:00:00+09:00",
+        startedAt: `${sessionBDay}T10:00:00+09:00`,
+        endedAt: `${sessionBDay}T11:00:00+09:00`,
         initialGymId: "gym-beta",
-        createdAt: "2026-08-25T10:00:00+09:00",
+        createdAt: `${sessionBDay}T10:00:00+09:00`,
       },
     ]);
     await db.attempts.add({
       id: "attempt-a",
       sessionId: "session-a",
       climbId: "climb-a",
-      startedAt: "2026-08-24T10:10:00+09:00",
-      endedAt: "2026-08-24T10:11:00+09:00",
+      startedAt: `${sessionADay}T10:10:00+09:00`,
+      endedAt: `${sessionADay}T10:11:00+09:00`,
       result: "send",
-      createdAt: "2026-08-24T10:10:00+09:00",
+      createdAt: `${sessionADay}T10:10:00+09:00`,
     });
     await db.strengthSets.add({
       id: "set-b",
       sessionId: "session-b",
       name: "Pull-up",
-      startedAt: "2026-08-25T10:10:00+09:00",
-      endedAt: "2026-08-25T10:11:00+09:00",
-      createdAt: "2026-08-25T10:10:00+09:00",
+      startedAt: `${sessionBDay}T10:10:00+09:00`,
+      endedAt: `${sessionBDay}T10:11:00+09:00`,
+      createdAt: `${sessionBDay}T10:10:00+09:00`,
     });
 
     renderHistory();
 
     expect(await screen.findByText("Activity Calendar")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /2026-08-24/ }));
+    await user.click(screen.getByRole("button", { name: new RegExp(sessionADay) }));
 
     const selectedDay = screen.getByRole("region", { name: "Selected day sessions" });
     expect(within(selectedDay).getByText("BETA")).toBeInTheDocument();
@@ -76,6 +79,13 @@ function renderHistory() {
       </Routes>
     </MemoryRouter>,
   );
+}
+
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function SummaryRouteProbe() {
