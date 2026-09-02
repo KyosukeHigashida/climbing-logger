@@ -29,6 +29,9 @@ export function SessionGradeTimeline({ session, climbs, attempts, grades, boards
   useEffect(() => {
     setSelectedWallState((current) => (current.userSelected || current.value === initialWallValue ? current : { ...current, value: initialWallValue }));
   }, [initialWallValue]);
+  useEffect(() => {
+    setSelectedWallState({ value: initialWallValue, userSelected: false });
+  }, [session.id]);
   const selectedWall = useMemo((): SessionGradeTimelineWall => {
     if (selectedWallValue.startsWith("board:")) {
       return { type: "board", boardId: selectedWallValue.replace("board:", "") };

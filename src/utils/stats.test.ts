@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Attempt, Session, StrengthSet } from "../types/domain";
 import {
+  addMonths,
   buildOverlaySegments,
   buildActivityStats,
   getBucketCenterX,
@@ -21,6 +22,32 @@ describe("stats aggregation", () => {
     expect(getBucketUnit("6m")).toBe("week");
     expect(getBucketUnit("1y")).toBe("week");
     expect(getBucketUnit("all")).toBe("month");
+  });
+
+  it("clamps calendar month arithmetic at destination month end", () => {
+    expectLocalDate(addMonths(new Date(2026, 7, 31), -6), 2026, 1, 28);
+    expectLocalDate(addMonths(new Date(2024, 7, 31), -6), 2024, 1, 29);
+    expectLocalDate(addMonths(new Date(2026, 2, 31), -1), 2026, 1, 28);
+    expectLocalDate(addMonths(new Date(2026, 0, 31), 1), 2026, 1, 28);
+    expectLocalDate(addMonths(new Date(2026, 7, 15), -6), 2026, 1, 15);
+  });
+
+  it("does not roll 6M and 1Y ranges into the following month from month-end anchors", () => {
+    const sixMonthRange = buildActivityStats([], [], [], {
+      period: "6m",
+      activityType: "activity",
+      effortFilter: { label: "all", operator: ">=" },
+      anchorDate: new Date(2026, 7, 31, 12),
+    }).range;
+    const oneYearRange = buildActivityStats([], [], [], {
+      period: "1y",
+      activityType: "activity",
+      effortFilter: { label: "all", operator: ">=" },
+      anchorDate: new Date(2026, 2, 31, 12),
+    }).range;
+
+    expect(sixMonthRange.start.getMonth()).toBe(1);
+    expect(oneYearRange.start.getMonth()).toBe(2);
   });
 
   it("builds stacked activity counts from attempts and completed strength sets", () => {
@@ -147,6 +174,16 @@ describe("stats aggregation", () => {
     expect(stats.buckets.some((bucket) => bucket.key === "2026-08" && bucket.strengthSetCount === 1)).toBe(true);
   });
 
+  it("keeps all-time month boundaries aligned to calendar months", () => {
+    const stats = buildStats({
+      period: "all",
+      sessions: [session("old", "2026-01-31T09:00:00.000Z"), session("new", "2026-08-31T09:00:00.000Z")],
+    });
+
+    expect(stats.buckets.at(0)?.key).toBe("2026-01");
+    expect(stats.buckets.at(-1)?.key).toBe("2026-08");
+  });
+
   it("places overlay points at bucket centers, matching bar coordinates", () => {
     const buckets = [
       statsBucket("b1", 2),
@@ -264,4 +301,10 @@ function statsBucket(key: string, sessionRpeAverage: number | null): StatsBucket
     sessionRpeAverage,
     performanceAverage: null,
   };
+}
+
+function expectLocalDate(date: Date, year: number, month: number, day: number) {
+  expect(date.getFullYear()).toBe(year);
+  expect(date.getMonth()).toBe(month);
+  expect(date.getDate()).toBe(day);
 }

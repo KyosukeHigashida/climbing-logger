@@ -313,8 +313,12 @@ function addDays(date: Date, days: number): Date {
   return next;
 }
 
-function addMonths(date: Date, months: number): Date {
-  return new Date(date.getFullYear(), date.getMonth() + months, date.getDate());
+export function addMonths(date: Date, months: number): Date {
+  const targetMonthStart = new Date(date.getFullYear(), date.getMonth() + months, 1);
+  const targetYear = targetMonthStart.getFullYear();
+  const targetMonth = targetMonthStart.getMonth();
+  const lastDayOfTargetMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+  return new Date(targetYear, targetMonth, Math.min(date.getDate(), lastDayOfTargetMonth));
 }
 
 function average(values: number[]): number | null {

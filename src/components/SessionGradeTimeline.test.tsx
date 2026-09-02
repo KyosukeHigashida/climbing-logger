@@ -61,11 +61,67 @@ describe("SessionGradeTimeline initial wall selection", () => {
 
     expect(screen.getByLabelText("Wall")).toHaveValue("gym");
   });
+
+  it("resets user wall selection when the session changes", () => {
+    const boards = [board("board-a", "Board A"), board("board-b", "Board B")];
+    const { rerender } = render(
+      <SessionGradeTimeline
+        session={session("session-a")}
+        climbs={[boardClimb("board-a-climb", "a1", "board-a")]}
+        attempts={[attempt("a1", "board-a-climb", "2026-08-25T10:01:00.000Z")]}
+        grades={[boardGrade("a1", "V0", 0, "board-a"), boardGrade("b1", "V0", 0, "board-b")]}
+        boards={boards}
+      />,
+    );
+
+    const select = screen.getByLabelText("Wall");
+    expect(select).toHaveValue("board:board-a");
+    fireEvent.change(select, { target: { value: "gym" } });
+    expect(select).toHaveValue("gym");
+
+    rerender(
+      <SessionGradeTimeline
+        session={session("session-b")}
+        climbs={[boardClimb("board-b-climb", "b1", "board-b")]}
+        attempts={[attempt("b1", "board-b-climb", "2026-08-26T10:01:00.000Z")]}
+        grades={[boardGrade("a1", "V0", 0, "board-a"), boardGrade("b1", "V0", 0, "board-b")]}
+        boards={boards}
+      />,
+    );
+
+    expect(screen.getByLabelText("Wall")).toHaveValue("board:board-b");
+  });
+
+  it("does not carry a board selection that only exists in the previous session", () => {
+    const { rerender } = render(
+      <SessionGradeTimeline
+        session={session("session-a")}
+        climbs={[boardClimb("board-a-climb", "a1", "board-a")]}
+        attempts={[attempt("a1", "board-a-climb", "2026-08-25T10:01:00.000Z")]}
+        grades={[boardGrade("a1", "V0", 0, "board-a")]}
+        boards={[board("board-a", "Board A")]}
+      />,
+    );
+
+    expect(screen.getByLabelText("Wall")).toHaveValue("board:board-a");
+
+    rerender(
+      <SessionGradeTimeline
+        session={session("session-b")}
+        climbs={[gymClimb("gym", "g1")]}
+        attempts={[attempt("gym-attempt", "gym", "2026-08-26T10:01:00.000Z")]}
+        grades={grades()}
+        boards={[]}
+      />,
+    );
+
+    expect(screen.getByLabelText("Wall")).toHaveValue("gym");
+  });
 });
 
-function session(): Session {
+function session(id = "session"): Session {
   return {
-    id: "session",
+    id,
     startedAt: "2026-08-25T10:00:00.000Z",
     endedAt: "2026-08-25T12:00:00.000Z",
     initialGymId: "gym-a",
