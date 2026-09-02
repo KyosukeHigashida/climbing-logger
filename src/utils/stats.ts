@@ -1,5 +1,5 @@
 import type { Attempt, EffortRating, Session, StrengthSet } from "../types/domain";
-import { getAttemptEndTime, isCompletedAttempt } from "./attempts";
+import { isCompletedAttempt } from "./attempts";
 
 export type StatsActivityType = "activity" | "climb" | "training";
 export type StatsPeriod = "7d" | "30d" | "6m" | "1y" | "all";
@@ -72,6 +72,7 @@ export function buildActivityStats(
   const anchorDate = options.anchorDate ?? new Date();
   const completedAttempts = attempts.filter(isCompletedAttempt);
   const completedStrengthSets = strengthSets.filter((set) => set.endedAt !== null);
+  const sessionById = new Map(sessions.map((session) => [session.id, session]));
   const unit = getBucketUnit(options.period);
   const range = getStatsRange(options.period, anchorDate, sessions, completedAttempts, completedStrengthSets);
   const buckets = createBuckets(range, unit);
@@ -80,8 +81,8 @@ export function buildActivityStats(
     if (options.activityType === "training" || !matchesEffortFilter(attempt.effort ?? null, options.effortFilter)) {
       continue;
     }
-    const occurredAt = getAttemptEndTime(attempt);
-    const bucket = occurredAt ? findBucket(buckets, occurredAt) : null;
+    const sessionStartedAt = sessionById.get(attempt.sessionId)?.startedAt ?? null;
+    const bucket = sessionStartedAt ? findBucket(buckets, sessionStartedAt) : null;
     if (bucket) {
       bucket.attemptCount += 1;
     }
@@ -91,8 +92,8 @@ export function buildActivityStats(
     if (options.activityType === "climb" || !matchesEffortFilter(set.effort ?? null, options.effortFilter)) {
       continue;
     }
-    const occurredAt = set.endedAt;
-    const bucket = occurredAt ? findBucket(buckets, occurredAt) : null;
+    const sessionStartedAt = sessionById.get(set.sessionId)?.startedAt ?? null;
+    const bucket = sessionStartedAt ? findBucket(buckets, sessionStartedAt) : null;
     if (bucket) {
       bucket.strengthSetCount += 1;
     }
@@ -234,10 +235,11 @@ export function getStatsRange(
     return { start: startOfWeek(addMonths(anchorDay, -12)), end };
   }
 
+  const sessionById = new Map(sessions.map((session) => [session.id, session]));
   const activityDates = [
     ...sessions.map((session) => session.startedAt),
-    ...attempts.map((attempt) => getAttemptEndTime(attempt)).filter((value): value is string => value !== null),
-    ...strengthSets.map((set) => set.endedAt).filter((value): value is string => value !== null),
+    ...attempts.map((attempt) => sessionById.get(attempt.sessionId)?.startedAt).filter((value): value is string => value !== undefined),
+    ...strengthSets.map((set) => sessionById.get(set.sessionId)?.startedAt).filter((value): value is string => value !== undefined),
   ];
   if (activityDates.length === 0) {
     return { start: startOfMonth(anchorDay), end: addMonths(startOfMonth(anchorDay), 1) };

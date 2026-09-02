@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Attempt, Board, Climb, Grade, Session } from "../types/domain";
+import { isCompletedAttempt, sortAttemptsByTimestamp } from "../utils/attempts";
 import { effortLabels } from "../utils/effort";
 import {
   buildSessionGradeTimeline,
@@ -22,7 +23,12 @@ const margin = { top: 18, right: 18, bottom: 32, left: 42 };
 
 export function SessionGradeTimeline({ session, climbs, attempts, grades, boards }: SessionGradeTimelineProps) {
   const boardOptions = useMemo(() => getTimelineBoardOptions(climbs, boards), [boards, climbs]);
-  const [selectedWallValue, setSelectedWallValue] = useState("gym");
+  const initialWallValue = useMemo(() => getInitialGradeTimelineWallValue(session, climbs, attempts, grades), [attempts, climbs, grades, session]);
+  const [selectedWallState, setSelectedWallState] = useState({ value: initialWallValue, userSelected: false });
+  const selectedWallValue = selectedWallState.value;
+  useEffect(() => {
+    setSelectedWallState((current) => (current.userSelected || current.value === initialWallValue ? current : { ...current, value: initialWallValue }));
+  }, [initialWallValue]);
   const selectedWall = useMemo((): SessionGradeTimelineWall => {
     if (selectedWallValue.startsWith("board:")) {
       return { type: "board", boardId: selectedWallValue.replace("board:", "") };
@@ -38,7 +44,7 @@ export function SessionGradeTimeline({ session, climbs, attempts, grades, boards
   const controls = (
     <label className="grade-timeline-wall-select">
       <span className="metric-label">Wall</span>
-      <select value={selectedWallValue} onChange={(event) => setSelectedWallValue(event.target.value)}>
+      <select value={selectedWallValue} onChange={(event) => setSelectedWallState({ value: event.target.value, userSelected: true })}>
         <option value="gym">Gym Wall</option>
         {boardOptions.length > 0 && <option disabled>────────</option>}
         {boardOptions.map((board) => (
@@ -135,6 +141,30 @@ export function SessionGradeTimeline({ session, climbs, attempts, grades, boards
       {selectedAttempt && <GradeTimelineDetails attempt={selectedAttempt} />}
     </section>
   );
+}
+
+export function getInitialGradeTimelineWallValue(session: Session, climbs: Climb[], attempts: Attempt[], grades: Grade[]): string {
+  const gymTimeline = buildSessionGradeTimeline(session, climbs, attempts, grades, { type: "gym" });
+  if (gymTimeline.attempts.length > 0) {
+    return "gym";
+  }
+
+  const climbById = new Map(climbs.map((climb) => [climb.id, climb]));
+  const boardIdsByFirstAttempt = sortAttemptsByTimestamp(attempts)
+    .filter(isCompletedAttempt)
+    .flatMap((attempt) => {
+      const climb = climbById.get(attempt.climbId);
+      return climb?.wallType === "board" && climb.wallBoardId ? [climb.wallBoardId] : [];
+    });
+
+  for (const boardId of boardIdsByFirstAttempt) {
+    const boardTimeline = buildSessionGradeTimeline(session, climbs, attempts, grades, { type: "board", boardId });
+    if (boardTimeline.attempts.length > 0) {
+      return `board:${boardId}`;
+    }
+  }
+
+  return "gym";
 }
 
 function getTimelineBoardOptions(climbs: Climb[], boards: Board[]): Array<{ id: string; name: string }> {

@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   loadActiveSessionSnapshot,
   loadCurrentActiveSessionSnapshot,
@@ -38,20 +38,42 @@ const ActiveSessionContext = createContext<ActiveSessionContextValue | null>(nul
 export function ActiveSessionProvider({ children }: { children: ReactNode }) {
   const [snapshot, setSnapshot] = useState<ActiveSessionSnapshot | null>(null);
   const [isHydrating, setIsHydrating] = useState(true);
+  const refreshGenerationRef = useRef(0);
+  const isMountedRef = useRef(true);
+
+  const beginRefresh = useCallback(() => {
+    refreshGenerationRef.current += 1;
+    return refreshGenerationRef.current;
+  }, []);
+
+  const applySnapshotIfCurrent = useCallback((generation: number, nextSnapshot: ActiveSessionSnapshot | null) => {
+    if (isMountedRef.current && generation === refreshGenerationRef.current) {
+      setSnapshot(nextSnapshot);
+    }
+  }, []);
 
   const refreshCurrentActiveSession = useCallback(async () => {
+    const generation = beginRefresh();
     const nextSnapshot = await loadCurrentActiveSessionSnapshot(
       snapshot?.ui.currentClimbId ?? null,
       snapshot?.ui.currentWallType ?? "gym",
       snapshot?.ui.currentBoardId ?? null,
       snapshot?.ui.currentActivityType ?? "climb",
     );
-    setSnapshot(nextSnapshot);
+    applySnapshotIfCurrent(generation, nextSnapshot);
     return nextSnapshot;
-  }, [snapshot?.ui.currentActivityType, snapshot?.ui.currentBoardId, snapshot?.ui.currentClimbId, snapshot?.ui.currentWallType]);
+  }, [
+    applySnapshotIfCurrent,
+    beginRefresh,
+    snapshot?.ui.currentActivityType,
+    snapshot?.ui.currentBoardId,
+    snapshot?.ui.currentClimbId,
+    snapshot?.ui.currentWallType,
+  ]);
 
   const refreshSession = useCallback(
     async (sessionId: string, currentClimbId: string | null = null, wallSelection: SavedWallSelection | null = null) => {
+      const generation = beginRefresh();
       const nextSnapshot = await loadActiveSessionSnapshot(
         sessionId,
         currentClimbId,
@@ -59,15 +81,16 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
         wallSelection?.wallBoardId ?? snapshot?.ui.currentBoardId ?? null,
         snapshot?.ui.currentActivityType ?? "climb",
       );
-      setSnapshot(nextSnapshot);
+      applySnapshotIfCurrent(generation, nextSnapshot);
       return nextSnapshot;
     },
-    [snapshot?.ui.currentActivityType, snapshot?.ui.currentBoardId, snapshot?.ui.currentWallType],
+    [applySnapshotIfCurrent, beginRefresh, snapshot?.ui.currentActivityType, snapshot?.ui.currentBoardId, snapshot?.ui.currentWallType],
   );
 
   const clearSnapshot = useCallback(() => {
+    beginRefresh();
     setSnapshot(null);
-  }, []);
+  }, [beginRefresh]);
 
   const setCurrentClimbId = useCallback((currentClimbId: string | null) => {
     setSnapshot((current) => {
@@ -221,15 +244,14 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    let isMounted = true;
+    isMountedRef.current = true;
     async function hydrate() {
+      const generation = beginRefresh();
       try {
         const nextSnapshot = await loadCurrentActiveSessionSnapshot();
-        if (isMounted) {
-          setSnapshot(nextSnapshot);
-        }
+        applySnapshotIfCurrent(generation, nextSnapshot);
       } finally {
-        if (isMounted) {
+        if (isMountedRef.current) {
           setIsHydrating(false);
         }
       }
@@ -237,9 +259,9 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
 
     void hydrate();
     return () => {
-      isMounted = false;
+      isMountedRef.current = false;
     };
-  }, []);
+  }, [applySnapshotIfCurrent, beginRefresh]);
 
   const value = useMemo(
     () => ({

@@ -55,6 +55,7 @@ describe("stats aggregation", () => {
   it("applies effort filters and excludes records without effort when filtering", () => {
     const filter: StatsEffortFilter = { label: "hard", operator: ">=" };
     const stats = buildStats({
+      sessions: [session("s1", "2026-08-24T09:00:00.000Z")],
       attempts: [
         attempt("easy", "s1", "2026-08-24T09:10:00.000Z", 1),
         attempt("hard", "s1", "2026-08-24T09:20:00.000Z", 5),
@@ -69,6 +70,51 @@ describe("stats aggregation", () => {
     expect(matchesEffortFilter(5, filter)).toBe(true);
     expect(matchesEffortFilter(4, filter)).toBe(false);
     expect(matchesEffortFilter(null, filter)).toBe(false);
+  });
+
+  it("buckets overnight attempts by their session start day", () => {
+    const stats = buildStats({
+      sessions: [session("overnight", "2026-08-23T23:30:00+09:00", 8, 4)],
+      attempts: [attempt("after-midnight", "overnight", "2026-08-24T00:10:00+09:00")],
+    });
+
+    expect(stats.buckets.find((bucket) => bucket.key === "2026-08-23")).toMatchObject({
+      attemptCount: 1,
+      sessionRpeAverage: 8,
+      performanceAverage: 4,
+    });
+    expect(stats.buckets.find((bucket) => bucket.key === "2026-08-24")).toMatchObject({ attemptCount: 0 });
+  });
+
+  it("buckets overnight strength sets by their session start day", () => {
+    const stats = buildStats({
+      sessions: [session("overnight", "2026-08-23T23:30:00+09:00")],
+      strengthSets: [strengthSet("after-midnight", "overnight", "2026-08-24T00:10:00+09:00")],
+    });
+
+    expect(stats.buckets.find((bucket) => bucket.key === "2026-08-23")).toMatchObject({ strengthSetCount: 1 });
+    expect(stats.buckets.find((bucket) => bucket.key === "2026-08-24")).toMatchObject({ strengthSetCount: 0 });
+  });
+
+  it("keeps normal daytime sessions in the same bucket as before", () => {
+    const stats = buildStats({
+      sessions: [session("daytime", "2026-08-24T09:00:00+09:00")],
+      attempts: [attempt("a1", "daytime", "2026-08-24T09:30:00+09:00")],
+      strengthSets: [strengthSet("st1", "daytime", "2026-08-24T10:00:00+09:00")],
+    });
+
+    expect(stats.buckets.find((bucket) => bucket.key === "2026-08-24")).toMatchObject({ attemptCount: 1, strengthSetCount: 1 });
+  });
+
+  it("excludes orphan attempts and strength sets from session-based buckets", () => {
+    const stats = buildStats({
+      sessions: [session("s1", "2026-08-24T09:00:00.000Z")],
+      attempts: [attempt("orphan-attempt", "missing", "2026-08-24T09:30:00.000Z")],
+      strengthSets: [strengthSet("orphan-set", "missing", "2026-08-24T09:45:00.000Z")],
+    });
+
+    expect(stats.totalAttempts).toBe(0);
+    expect(stats.totalStrengthSets).toBe(0);
   });
 
   it("averages session RPE and performance per bucket independently from effort filtering", () => {
