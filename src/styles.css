@@ -1833,6 +1833,10 @@ h2 {
 
 .recent-sessions-section > .session-list {
   margin: 0;
+  max-height: min(430px, 48vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   padding: 14px 16px 16px;
   border-top: 1px solid rgba(var(--color-border-rgb), 0.1);
 }

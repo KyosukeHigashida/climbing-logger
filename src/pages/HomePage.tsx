@@ -302,7 +302,7 @@ export function HomePage({ colorTheme = "forest", onColorThemeChange = () => und
             <p className="empty">Completed sessions will stay here.</p>
           ) : (
             <div className="session-list">
-              {completedSessions.slice(0, 8).map((session) => {
+              {completedSessions.map((session) => {
                 const attemptCount = getAttemptCount(attempts.filter((attempt) => attempt.sessionId === session.id));
                 const gymName = session.initialGymId ? gymById.get(session.initialGymId)?.name ?? "Unknown Gym" : "No Gym";
                 const label = formatShortDate(session.startedAt);
