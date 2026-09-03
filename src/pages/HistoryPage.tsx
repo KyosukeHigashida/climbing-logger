@@ -1,5 +1,5 @@
 import { useLiveQuery } from "dexie-react-hooks";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   getAllAttempts,
@@ -38,6 +38,7 @@ export function HistoryPage() {
   const [visibleMonth, setVisibleMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
   const [selectedDateKey, setSelectedDateKey] = useState(() => toDateKey(today));
   const [summaryMode, setSummaryMode] = useState<SummaryMode>("month");
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
 
   if (!sessions || !attempts || !strengthSets || !gyms) {
     return <main className="app-shell loading">Loading history...</main>;
@@ -63,6 +64,22 @@ export function HistoryPage() {
     setSelectedDateKey(toDateKey(nextToday));
   }
 
+  function handleCalendarSwipeEnd(x: number, y: number) {
+    const start = swipeStartRef.current;
+    swipeStartRef.current = null;
+    if (!start) {
+      return;
+    }
+
+    const deltaX = x - start.x;
+    const deltaY = y - start.y;
+    if (Math.abs(deltaX) < 48 || Math.abs(deltaX) < Math.abs(deltaY) * 1.2) {
+      return;
+    }
+
+    handleMonthChange(deltaX < 0 ? 1 : -1);
+  }
+
   return (
     <main className="app-shell">
       <header className="session-header">
@@ -76,29 +93,19 @@ export function HistoryPage() {
       </header>
 
       <section className="section history-section" aria-label="History calendar">
-        <div className="history-mode-switch">
-          <button className={summaryMode === "week" ? "selected" : ""} onClick={() => setSummaryMode("week")}>
-            Week
-          </button>
-          <button className={summaryMode === "month" ? "selected" : ""} onClick={() => setSummaryMode("month")}>
-            Month
-          </button>
-        </div>
-
-        <div className="calendar-toolbar">
-          <button className="calendar-nav-button" aria-label="Previous month" onClick={() => handleMonthChange(-1)}>
-            ‹
-          </button>
-          <strong>{formatMonthTitle(visibleMonth)}</strong>
-          <button className="calendar-nav-button" aria-label="Next month" onClick={() => handleMonthChange(1)}>
-            ›
-          </button>
-        </div>
-        <button className="secondary full history-today-button" onClick={handleToday}>
-          Today
-        </button>
-
-        <div className="calendar-grid" role="grid" aria-label={formatMonthTitle(visibleMonth)}>
+        <strong className="calendar-month-title">{formatMonthTitle(visibleMonth)}</strong>
+        <div
+          className="calendar-grid"
+          role="grid"
+          aria-label={formatMonthTitle(visibleMonth)}
+          onPointerDown={(event) => {
+            swipeStartRef.current = { x: event.clientX, y: event.clientY };
+          }}
+          onPointerCancel={() => {
+            swipeStartRef.current = null;
+          }}
+          onPointerUp={(event) => handleCalendarSwipeEnd(event.clientX, event.clientY)}
+        >
           {weekdayLabels.map((label) => (
             <div className="calendar-weekday" key={label}>
               {label}
@@ -127,6 +134,29 @@ export function HistoryPage() {
               </button>
             );
           })}
+        </div>
+
+        <div className="history-calendar-controls">
+          <div className="calendar-toolbar">
+            <button className="calendar-nav-button" aria-label="Previous month" onClick={() => handleMonthChange(-1)}>
+              ‹
+            </button>
+            <span aria-hidden="true" />
+            <button className="calendar-nav-button" aria-label="Next month" onClick={() => handleMonthChange(1)}>
+              ›
+            </button>
+          </div>
+          <button className="secondary full history-today-button" onClick={handleToday}>
+            Today
+          </button>
+          <div className="history-mode-switch">
+            <button className={summaryMode === "week" ? "selected" : ""} onClick={() => setSummaryMode("week")}>
+              Week
+            </button>
+            <button className={summaryMode === "month" ? "selected" : ""} onClick={() => setSummaryMode("month")}>
+              Month
+            </button>
+          </div>
         </div>
       </section>
 

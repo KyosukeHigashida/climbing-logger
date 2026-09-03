@@ -1927,6 +1927,19 @@ h2 {
   color: var(--color-primary-text);
 }
 
+.history-calendar-controls {
+  display: grid;
+  gap: 8px;
+}
+
+.calendar-month-title {
+  display: block;
+  color: var(--color-text);
+  font-size: 1rem;
+  font-weight: 950;
+  text-align: center;
+}
+
 .calendar-toolbar {
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr) 40px;
@@ -1963,6 +1976,7 @@ h2 {
   gap: 0;
   min-width: 0;
   overflow: hidden;
+  touch-action: pan-y;
   border-top: 1px solid rgba(var(--color-border-rgb), 0.16);
   border-left: 1px solid rgba(var(--color-border-rgb), 0.16);
 }
